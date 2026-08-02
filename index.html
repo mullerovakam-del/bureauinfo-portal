@@ -288,7 +288,7 @@
   #toast.danger{background:#7a1c2b;}
 
   /* ---------- Modal ---------- */
-  #modalOverlay,#profileModalOverlay{
+  #modalOverlay,#profileModalOverlay,#passwordModalOverlay{
     position:fixed;inset:0;background:rgba(14,20,35,.5);display:flex;align-items:center;justify-content:center;z-index:90;padding:20px;
   }
   .modal-card{background:#fff;border-radius:12px;max-width:460px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
@@ -361,7 +361,7 @@
         <button class="profile-trigger" onclick="toggleAccountMenu(event)" title="Account menu">
           <div style="text-align:right;">
             <div class="client-name" id="clientNameDisplay">Jana Nováková</div>
-            <div class="client-sub">Lenderbank CZ · LEND-1023</div>
+            <div class="client-sub">Lenderbank · LEND-1023</div>
           </div>
           <div class="avatar" id="avatarInitials">JN</div>
         </button>
@@ -426,6 +426,7 @@
               </div>
             </div>
             <button class="btn btn-primary" style="margin-top:6px;" onclick="searchPerson()">SEARCH</button>
+            <div id="personSearchError" class="form-error hidden"></div>
           </div>
 
           <!-- Company search form -->
@@ -481,7 +482,7 @@
           <div class="price-row"><span class="k">Consumer Report</span><span class="v">€0.60 – €1.20 / report</span></div>
           <div class="price-row"><span class="k">Business Report</span><span class="v">€2.00 – €5.00 / report</span></div>
           <div class="price-row"><span class="k">Portal / API Access Fee</span><span class="v">€500 – €5,000 / month</span></div>
-          <p class="muted-sm" style="margin-top:12px;">Products: consumer &amp; business reports, bureau score &amp; risk bands, monitoring &amp; alerts, API and batch delivery. Prices shown for illustration only.</p>
+          <p class="muted-sm" style="margin-top:12px;">Prices shown for illustration only.</p>
         </div>
 
       </div>
@@ -701,7 +702,7 @@ const session = {
   lastName: 'Nováková',
   email: 'jana.novakova@lenderbank.cz',
   password: 'Lender#2026',
-  clientOrg: 'Lenderbank CZ',
+  clientOrg: 'Lenderbank',
   market: 'CZ',
   get currentUser(){ return this.firstName.charAt(0) + '. ' + this.lastName; }
 };
@@ -930,6 +931,13 @@ function buildGenericProfile(type, displayName, country, idValue){
 /* ============================================================
    LOGIN
    ============================================================ */
+const COUNTRY_META = {
+  CZ: { city:'Prague', vatExample:'CZ12345678' },
+  SK: { city:'Bratislava', vatExample:'SK12345678' },
+  PL: { city:'Warsaw', vatExample:'PL12345678' },
+  DE: { city:'Berlin', vatExample:'DE12345678' }
+};
+
 function login(){
   const country = document.getElementById('loginCountry').value;
   const emailInput = document.getElementById('workEmail').value.trim();
@@ -939,6 +947,16 @@ function login(){
   document.getElementById('portalScreen').classList.remove('hidden');
   document.getElementById('marketPill').textContent = 'Market: ' + country;
   updateTopbarDisplay();
+  applyMarketDefaults();
+}
+
+function applyMarketDefaults(){
+  const meta = COUNTRY_META[session.market] || COUNTRY_META.CZ;
+  document.getElementById('p-country').value = session.market;
+  document.getElementById('c-country').value = session.market;
+  document.getElementById('p-city').placeholder = meta.city;
+  document.getElementById('c-city').placeholder = meta.city;
+  document.getElementById('c-vat').placeholder = meta.vatExample;
 }
 
 function updateTopbarDisplay(){
@@ -1106,10 +1124,34 @@ function switchSearchType(type){
   document.getElementById('toggle-company').classList.toggle('active', type==='company');
   document.getElementById('personSearchForm').classList.toggle('hidden', type!=='person');
   document.getElementById('companySearchForm').classList.toggle('hidden', type!=='company');
+  document.getElementById('personSearchError').classList.add('hidden');
   document.getElementById('companySearchError').classList.add('hidden');
 }
 
+/* Any field not marked (Optional) in its label is required. */
+function requiredFieldsMessage(missingLabels){
+  const noun = missingLabels.length === 1 ? 'field' : 'fields';
+  return 'You must fill in the ' + noun + ' ' + joinWithAnd(missingLabels) + '.';
+}
+
 function searchPerson(){
+  const errEl = document.getElementById('personSearchError');
+  errEl.classList.add('hidden');
+
+  const requiredFields = [
+    { id:'p-first', label:'First Name' },
+    { id:'p-last', label:'Last Name' },
+    { id:'p-birthregno', label:'Birth Registration Number' },
+    { id:'p-nid', label:'National ID / Personal ID' },
+    { id:'p-country', label:'Country' }
+  ];
+  const missing = requiredFields.filter(f => !document.getElementById(f.id).value.trim()).map(f => f.label);
+  if(missing.length > 0){
+    errEl.textContent = requiredFieldsMessage(missing);
+    errEl.classList.remove('hidden');
+    return;
+  }
+
   const first = document.getElementById('p-first').value;
   const last = document.getElementById('p-last').value;
   const country = document.getElementById('p-country').value;
@@ -1131,12 +1173,25 @@ function searchPerson(){
 }
 
 function searchCompany(){
+  const errEl = document.getElementById('companySearchError');
+  errEl.classList.add('hidden');
+
+  const requiredFields = [
+    { id:'c-name', label:'Company Legal Name' },
+    { id:'c-vat', label:'Registration / VAT ID' },
+    { id:'c-country', label:'Country' }
+  ];
+  const missing = requiredFields.filter(f => !document.getElementById(f.id).value.trim()).map(f => f.label);
+  if(missing.length > 0){
+    errEl.textContent = requiredFieldsMessage(missing);
+    errEl.classList.remove('hidden');
+    return;
+  }
+
   const name = document.getElementById('c-name').value;
   const country = document.getElementById('c-country').value;
   const vat = document.getElementById('c-vat').value;
   const norm = normalize(name);
-  const errEl = document.getElementById('companySearchError');
-  errEl.classList.add('hidden');
 
   if(norm === 'xyz'){
     errEl.textContent = 'This company does not exist in ' + country + '.';
