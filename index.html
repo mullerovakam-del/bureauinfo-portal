@@ -1,0 +1,1377 @@
+<!--
+  BureauInfo Portal — clickable prototype (single-file, no dependencies)
+
+  HOW TO USE
+  Save this file as index.html and open it in a modern browser (Chrome, Edge, Firefox, Safari).
+  No build step, no server, no external network calls required.
+
+  MAIN FLOWS
+  1) Login screen -> "Login to BureauInfo" (any input works, login always succeeds).
+  2) Portal dashboard -> search a Person or a Company. Try: "Anna Novak" (CZ, low risk),
+     "John Doe" (CZ, high risk), "Petr Svoboda" (thin file), "ABC s.r.o." (stable SME company),
+     "XYZ Holdings" (distressed company). "XYZ" alone shows a not-found error. Any other name
+     returns a generic example profile.
+  3) Credit report -> top summary (score, risk band, freshness, monitoring), primary decision
+     actions (Approve / Decline / Request More Info / Export PDF / View API Response /
+     Add to Monitoring — toggles to Remove from Monitoring), and tabs: Summary,
+     Open & Closed Credit (sortable by Product, Lender, Status, Last Payment), Enquiries,
+     Alerts, Audit & Disputes, API Response.
+  4) Actions and the Audit & Disputes note form append client-side entries to the audit trail
+     (mock only — nothing persists after a page refresh, no data leaves the browser).
+  5) Click the avatar/name in the top bar to edit the logged-in user's first name, last name,
+     and work email (mock only, session-scoped).
+
+  All data is fictional and hard-coded for demo purposes only.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BureauInfo Portal</title>
+<style>
+  :root{
+    --bg:#f3f5f7;
+    --panel:#ffffff;
+    --border:#dde3ea;
+    --text:#1b2430;
+    --text-muted:#5b6b7c;
+    --text-faint:#8695a7;
+    --brand:#1c4ed8;
+    --brand-dark:#153aa8;
+    --brand-light:#eaf0fe;
+    --low:#1c8a4b;
+    --low-bg:#e6f6ec;
+    --low-border:#a9dfc0;
+    --med:#a56600;
+    --med-bg:#fff3dc;
+    --med-border:#f0cf8a;
+    --high:#c0263a;
+    --high-bg:#fdeaec;
+    --high-border:#f2b6bd;
+    --limited:#4b5a92;
+    --limited-bg:#eaecf9;
+    --limited-border:#c3caee;
+    --radius:10px;
+    --shadow:0 1px 2px rgba(20,30,50,.06), 0 1px 8px rgba(20,30,50,.05);
+    font-size:15px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45;
+  }
+  .hidden{display:none !important;}
+  h1,h2,h3,h4{margin:0 0 .4em 0;font-weight:650;}
+  p{margin:0 0 .6em 0;}
+  a{color:var(--brand);}
+  button{font-family:inherit;font-size:.95rem;cursor:pointer;}
+  input,select,textarea{font-family:inherit;font-size:.95rem;}
+
+  /* ---------- Buttons ---------- */
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:9px 16px;border-radius:8px;border:1px solid var(--border);
+    background:#fff;color:var(--text);font-weight:600;transition:background .12s,border-color .12s,transform .04s;
+  }
+  .btn:hover{background:#f3f6fb;border-color:#c6d0dd;}
+  .btn:active{transform:translateY(1px);}
+  .btn-primary{background:var(--brand);border-color:var(--brand);color:#fff;}
+  .btn-primary:hover{background:var(--brand-dark);border-color:var(--brand-dark);}
+  .btn-success{background:#1c8a4b;border-color:#1c8a4b;color:#fff;}
+  .btn-success:hover{background:#146638;border-color:#146638;}
+  .btn-danger{background:#c0263a;border-color:#c0263a;color:#fff;}
+  .btn-danger:hover{background:#9c1c2c;border-color:#9c1c2c;}
+  .btn-ghost{background:transparent;}
+  .btn-sm{padding:6px 12px;font-size:.85rem;border-radius:6px;}
+  .btn-block{width:100%;justify-content:center;}
+  .btn[disabled]{opacity:.5;cursor:not-allowed;}
+
+  /* ---------- Login ---------- */
+  #loginScreen{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(160deg,#0e1f4d 0%,#153aa8 45%,#1c4ed8 100%);
+    padding:24px;
+  }
+  .login-card{
+    background:var(--panel);width:100%;max-width:420px;border-radius:14px;
+    box-shadow:0 20px 60px rgba(10,20,50,.35);padding:36px 34px 30px;
+  }
+  .login-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+  .login-logo .mark{
+    width:38px;height:38px;border-radius:9px;background:var(--brand);
+    color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.1rem;
+  }
+  .login-logo .word{font-size:1.25rem;font-weight:750;letter-spacing:-.02em;}
+  .login-sub{color:var(--text-muted);font-size:.88rem;margin-bottom:22px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:.78rem;font-weight:650;color:var(--text-muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.02em;}
+  .field input,.field select{
+    width:100%;padding:10px 11px;border:1px solid var(--border);border-radius:8px;background:#fbfcfe;color:var(--text);
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid #b9c9f7;border-color:var(--brand);}
+  .login-footnote{margin-top:16px;font-size:.78rem;color:var(--text-faint);text-align:center;}
+
+  /* ---------- Top bar ---------- */
+  #topbar{
+    background:#E2080A;color:#fff;display:flex;align-items:center;justify-content:space-between;
+    padding:10px 22px;position:sticky;top:0;z-index:30;
+  }
+  #topbar .tb-left{display:flex;align-items:center;gap:10px;}
+  #topbar .tb-left .mark{width:30px;height:30px;border-radius:7px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-weight:800;}
+  #topbar .tb-left .word{font-weight:700;font-size:1.05rem;letter-spacing:-.02em;}
+  #topbar .tb-right{display:flex;align-items:center;gap:16px;font-size:.85rem;}
+  #topbar .market-pill{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.24);padding:4px 10px;border-radius:20px;font-weight:600;}
+  .profile-trigger{
+    display:flex;align-items:center;gap:10px;background:none;border:none;color:inherit;padding:4px 8px;border-radius:8px;cursor:pointer;
+  }
+  .profile-trigger:hover{background:rgba(255,255,255,.14);}
+  #topbar .avatar{
+    width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.24);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#fff;flex:none;
+  }
+  #topbar .client-name{font-weight:600;}
+  #topbar .client-sub{color:rgba(255,255,255,.78);font-size:.78rem;}
+
+  main{max-width:1180px;margin:0 auto;padding:22px 22px 60px;}
+
+  /* ---------- Cards / panels ---------- */
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px 22px;}
+  .card + .card{margin-top:16px;}
+  .grid-2{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;align-items:start;}
+  @media (max-width:920px){.grid-2{grid-template-columns:1fr;}}
+
+  /* ---------- Search panel ---------- */
+  .search-toggle{display:flex;gap:8px;margin-bottom:16px;background:#eef1f6;padding:4px;border-radius:9px;width:fit-content;}
+  .search-toggle button{border:none;background:transparent;padding:8px 18px;border-radius:7px;font-weight:650;color:var(--text-muted);}
+  .search-toggle button.active{background:#fff;color:var(--brand);box-shadow:0 1px 3px rgba(20,30,50,.15);}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;}
+  @media (max-width:600px){.form-grid{grid-template-columns:1fr;}}
+  .form-grid .field.span2{grid-column:1 / -1;}
+  .form-error{margin-top:10px;padding:10px 12px;background:var(--high-bg);border:1px solid var(--high-border);color:var(--high);border-radius:8px;font-size:.85rem;font-weight:650;}
+
+  table{width:100%;border-collapse:collapse;font-size:.87rem;}
+  thead th{
+    text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;color:var(--text-faint);
+    padding:8px 10px;border-bottom:1px solid var(--border);font-weight:700;
+  }
+  thead th.sortable-th{cursor:pointer;user-select:none;white-space:nowrap;}
+  thead th.sortable-th:hover{color:var(--brand);}
+  tbody td{padding:10px 10px;border-bottom:1px solid #eef1f5;vertical-align:top;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:#f8fafc;}
+  .table-wrap{overflow-x:auto;}
+
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:.72rem;font-weight:700;letter-spacing:.01em;}
+  .badge-low{background:var(--low-bg);color:var(--low);border:1px solid var(--low-border);}
+  .badge-med{background:var(--med-bg);color:var(--med);border:1px solid var(--med-border);}
+  .badge-high{background:var(--high-bg);color:var(--high);border:1px solid var(--high-border);}
+  .badge-limited{background:var(--limited-bg);color:var(--limited);border:1px solid var(--limited-border);}
+  .badge-neutral{background:#eef1f6;color:var(--text-muted);border:1px solid var(--border);}
+
+  .link-btn{background:none;border:none;color:var(--brand);font-weight:650;padding:0;text-decoration:underline;cursor:pointer;font-size:.87rem;}
+
+  /* ---------- Coverage widget ---------- */
+  .coverage-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+  .stat-box{background:#f7f9fc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;}
+  .stat-box .num{font-size:1.25rem;font-weight:750;}
+  .stat-box .lbl{font-size:.74rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.02em;}
+  .price-row{display:flex;justify-content:space-between;font-size:.83rem;padding:6px 0;border-top:1px dashed var(--border);}
+  .price-row:first-of-type{border-top:none;}
+  .price-row .k{color:var(--text-muted);}
+  .price-row .v{font-weight:650;}
+
+  /* ---------- Report top summary ---------- */
+  #reportSection .subject-bar{
+    display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;
+  }
+  .subject-id{font-size:.85rem;color:var(--text-muted);margin-top:2px;}
+  .back-link{background:none;border:none;color:var(--text-muted);font-weight:600;padding:0 0 10px;cursor:pointer;font-size:.85rem;}
+  .back-link:hover{color:var(--brand);}
+
+  .score-panel{display:flex;gap:22px;align-items:center;flex-wrap:wrap;margin-top:14px;}
+  .score-ring{
+    width:104px;height:104px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-direction:column;
+    border:8px solid var(--band-border,#c6d0dd);background:var(--band-bg,#f3f5f7);flex:none;
+  }
+  .score-ring .score-val{font-size:1.5rem;font-weight:800;color:var(--band-color,#1b2430);line-height:1;}
+  .score-ring .score-max{font-size:.68rem;color:var(--text-faint);}
+  .score-meta{flex:1;min-width:220px;}
+  .score-meta .band-label{font-size:1.02rem;font-weight:750;margin-bottom:4px;}
+  .score-interpretation{color:var(--text-muted);font-size:.88rem;max-width:640px;}
+  .meta-lines{display:flex;gap:26px;flex-wrap:wrap;margin-top:14px;font-size:.83rem;color:var(--text-muted);}
+  .meta-lines b{color:var(--text);}
+  .mon-badge{display:inline-flex;align-items:center;gap:6px;font-weight:650;}
+  .mon-dot{width:8px;height:8px;border-radius:50%;background:var(--low);}
+  .mon-dot.off{background:var(--high);}
+
+  .actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--border);}
+
+  /* ---------- Tabs ---------- */
+  .tabs-nav{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-top:18px;flex-wrap:wrap;}
+  .tab-btn{
+    background:none;border:none;padding:10px 16px;font-weight:650;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;
+  }
+  .tab-btn:hover{color:var(--brand);}
+  .tab-btn.active{color:var(--brand);border-bottom-color:var(--brand);}
+  .tab-panel{display:none;padding-top:18px;}
+  .tab-panel.active{display:block;}
+
+  .reasons-list{margin:0;padding-left:20px;}
+  .reasons-list li{margin-bottom:6px;font-size:.9rem;}
+
+  .snapshot-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:16px;}
+  @media (max-width:900px){.snapshot-grid{grid-template-columns:repeat(2,1fr);}}
+  .snap-card{background:#f7f9fc;border:1px solid var(--border);border-radius:8px;padding:12px;}
+  .snap-card .snap-val{font-size:1.15rem;font-weight:750;}
+  .snap-card .snap-lbl{font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.02em;margin-top:2px;}
+
+  .guidance-box{
+    margin-top:16px;background:var(--brand-light);border:1px solid #c6d6fb;border-radius:8px;padding:12px 14px;font-size:.87rem;
+  }
+  .guidance-box b{color:var(--brand-dark);}
+
+  .alert-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #eef1f5;}
+  .alert-item:last-child{border-bottom:none;}
+  .alert-item .a-date{font-size:.76rem;color:var(--text-faint);white-space:nowrap;padding-top:2px;min-width:88px;}
+  .alert-item .a-body{flex:1;}
+  .alert-item .a-title{font-weight:650;font-size:.9rem;margin-bottom:2px;}
+  .alert-item .a-desc{font-size:.83rem;color:var(--text-muted);}
+
+  .cluster-note{
+    margin-bottom:14px;padding:10px 12px;background:var(--med-bg);border:1px solid var(--med-border);color:var(--med);
+    border-radius:8px;font-size:.85rem;font-weight:650;
+  }
+
+  /* Audit trail */
+  .audit-item{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid #eef1f5;}
+  .audit-item:last-child{border-bottom:none;}
+  .audit-item .au-time{font-size:.74rem;color:var(--text-faint);white-space:nowrap;min-width:150px;padding-top:2px;}
+  .audit-item .au-body{flex:1;}
+  .audit-item .au-user{font-weight:650;font-size:.87rem;}
+  .audit-item .au-desc{font-size:.85rem;color:var(--text-muted);margin-top:1px;}
+  .audit-form{margin-top:18px;padding-top:16px;border-top:1px solid var(--border);}
+  .audit-form textarea{width:100%;border:1px solid var(--border);border-radius:8px;padding:10px;min-height:70px;resize:vertical;background:#fbfcfe;}
+  .audit-form .row{display:flex;gap:10px;align-items:flex-start;margin-top:10px;flex-wrap:wrap;}
+  .audit-form select{padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:#fbfcfe;}
+
+  pre.api-block{
+    background:#0e1a3e;color:#d7e2ff;border-radius:10px;padding:18px;overflow:auto;font-size:.82rem;line-height:1.55;
+    max-height:640px;
+  }
+  pre.api-block code{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;}
+
+  /* ---------- Toast ---------- */
+  #toast{
+    position:fixed;bottom:26px;left:50%;transform:translateX(-50%);
+    background:#152449;color:#fff;padding:13px 20px;border-radius:9px;box-shadow:0 10px 30px rgba(0,0,0,.3);
+    font-size:.88rem;font-weight:600;z-index:100;max-width:420px;display:flex;gap:10px;align-items:center;
+  }
+  #toast.success{background:#0f5c33;}
+  #toast.danger{background:#7a1c2b;}
+
+  /* ---------- Modal ---------- */
+  #modalOverlay,#profileModalOverlay{
+    position:fixed;inset:0;background:rgba(14,20,35,.5);display:flex;align-items:center;justify-content:center;z-index:90;padding:20px;
+  }
+  .modal-card{background:#fff;border-radius:12px;max-width:460px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+  .modal-card h3{margin-bottom:4px;}
+  .modal-sub{color:var(--text-muted);font-size:.85rem;margin-bottom:16px;}
+  .doc-check{display:flex;align-items:center;gap:9px;padding:8px 0;font-size:.9rem;}
+  .doc-check input{width:16px;height:16px;}
+  .doc-check.disabled{opacity:.5;}
+  .doc-check.disabled input{cursor:not-allowed;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
+
+  .section-title-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+  .muted-sm{font-size:.78rem;color:var(--text-faint);}
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- 1) LOGIN SCREEN                                               -->
+<!-- ============================================================ -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="mark">BI</div>
+      <div class="word">BureauInfo Portal</div>
+    </div>
+    <div class="login-sub">Secure access for lender clients — consumer &amp; business bureau data.</div>
+
+    <form id="loginForm" onsubmit="return false;">
+      <div class="field">
+        <label for="clientId">Client ID</label>
+        <input id="clientId" type="text" placeholder="LEND-1023" value="LEND-1023">
+      </div>
+      <div class="field">
+        <label for="workEmail">Work Email</label>
+        <input id="workEmail" type="email" placeholder="jana.novakova@lenderbank.cz" value="jana.novakova@lenderbank.cz">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="••••••••" value="••••••••">
+      </div>
+      <div class="field">
+        <label for="loginCountry">Country</label>
+        <select id="loginCountry">
+          <option value="CZ" selected>Czech Republic (CZ)</option>
+          <option value="SK">Slovakia (SK)</option>
+          <option value="PL">Poland (PL)</option>
+          <option value="DE">Germany (DE)</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="login()">Login to BureauInfo</button>
+    </form>
+    <div class="login-footnote">Demo prototype · credentials are not validated · all data is fictional</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PORTAL (dashboard + report), shown after login                -->
+<!-- ============================================================ -->
+<div id="portalScreen" class="hidden">
+
+  <header id="topbar">
+    <div class="tb-left">
+      <div class="mark">BI</div>
+      <div class="word">BureauInfo Portal</div>
+    </div>
+    <div class="tb-right">
+      <span class="market-pill" id="marketPill">Market: CZ</span>
+      <button class="profile-trigger" onclick="openProfileModal()" title="Edit profile">
+        <div style="text-align:right;">
+          <div class="client-name" id="clientNameDisplay">Jana Nováková</div>
+          <div class="client-sub">Lenderbank CZ · LEND-1023</div>
+        </div>
+        <div class="avatar" id="avatarInitials">JN</div>
+      </button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ---------------------------------------------------------- -->
+    <!-- 2) DASHBOARD & SEARCH                                       -->
+    <!-- ---------------------------------------------------------- -->
+    <section id="dashboardSection">
+      <div class="grid-2">
+
+        <!-- Search panel -->
+        <div class="card">
+          <h2>Search Bureau Records</h2>
+          <p class="muted-sm" style="margin-bottom:14px;">Search a consumer (person) or a business (company) file. Try “Anna Novak”, “John Doe”, “Petr Svoboda”, “ABC s.r.o.” or “XYZ Holdings”.</p>
+
+          <div class="search-toggle">
+            <button id="toggle-person" class="active" onclick="switchSearchType('person')">Person</button>
+            <button id="toggle-company" onclick="switchSearchType('company')">Company</button>
+          </div>
+
+          <!-- Person search form -->
+          <div id="personSearchForm">
+            <div class="form-grid">
+              <div class="field">
+                <label for="p-first">First Name</label>
+                <input id="p-first" type="text" placeholder="Anna">
+              </div>
+              <div class="field">
+                <label for="p-last">Last Name</label>
+                <input id="p-last" type="text" placeholder="Novak">
+              </div>
+              <div class="field">
+                <label for="p-birthlastname">Birth Last Name (Optional)</label>
+                <input id="p-birthlastname" type="text" placeholder="e.g. Dvořáková">
+              </div>
+              <div class="field">
+                <label for="p-birthregno">Birth Registration Number</label>
+                <input id="p-birthregno" type="text" placeholder="e.g. 850412/3344">
+              </div>
+              <div class="field">
+                <label for="p-nid">National ID / Personal ID</label>
+                <input id="p-nid" type="text" placeholder="e.g. 855412/3344">
+              </div>
+              <div class="field">
+                <label for="p-country">Country</label>
+                <select id="p-country">
+                  <option value="CZ">CZ</option><option value="SK">SK</option><option value="PL">PL</option><option value="DE">DE</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="p-city">City (Optional)</label>
+                <input id="p-city" type="text" placeholder="Prague">
+              </div>
+            </div>
+            <button class="btn btn-primary" style="margin-top:6px;" onclick="searchPerson()">SEARCH</button>
+          </div>
+
+          <!-- Company search form -->
+          <div id="companySearchForm" class="hidden">
+            <div class="form-grid">
+              <div class="field span2">
+                <label for="c-name">Company Legal Name</label>
+                <input id="c-name" type="text" placeholder="ABC s.r.o.">
+              </div>
+              <div class="field">
+                <label for="c-vat">Registration / VAT ID</label>
+                <input id="c-vat" type="text" placeholder="CZ12345678">
+              </div>
+              <div class="field">
+                <label for="c-country">Country</label>
+                <select id="c-country">
+                  <option value="CZ">CZ</option><option value="SK">SK</option><option value="PL">PL</option><option value="DE">DE</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="c-city">City (Optional)</label>
+                <input id="c-city" type="text" placeholder="Brno">
+              </div>
+            </div>
+            <button class="btn btn-primary" style="margin-top:6px;" onclick="searchCompany()">SEARCH</button>
+            <div id="companySearchError" class="form-error hidden"></div>
+          </div>
+
+          <!-- Recent searches -->
+          <div style="margin-top:26px;">
+            <div class="section-title-row"><h3 style="margin:0;">Recent Searches</h3></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Time</th><th>Name</th><th>Type</th><th>Risk Band</th><th></th></tr></thead>
+                <tbody id="recentSearchesBody">
+                  <tr><td colspan="5" class="muted-sm" style="padding:16px 10px;">No searches yet this session.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Coverage & pricing widget -->
+        <div class="card">
+          <h2>Bureau Coverage &amp; Pricing</h2>
+          <div class="coverage-stats">
+            <div class="stat-box"><div class="num">240</div><div class="lbl">B2B Clients</div></div>
+            <div class="stat-box"><div class="num">4</div><div class="lbl">Markets</div></div>
+            <div class="stat-box"><div class="num">32M</div><div class="lbl">Consumer Files</div></div>
+            <div class="stat-box"><div class="num">1.4M</div><div class="lbl">Business Files</div></div>
+          </div>
+          <h4 style="margin-top:4px;">Indicative Pricing</h4>
+          <div class="price-row"><span class="k">Consumer Report</span><span class="v">€0.60 – €1.20 / report</span></div>
+          <div class="price-row"><span class="k">Business Report</span><span class="v">€2.00 – €5.00 / report</span></div>
+          <div class="price-row"><span class="k">Portal / API Access Fee</span><span class="v">€500 – €5,000 / month</span></div>
+          <p class="muted-sm" style="margin-top:12px;">Products: consumer &amp; business reports, bureau score &amp; risk bands, monitoring &amp; alerts, API and batch delivery. Prices shown for illustration only.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------------------- -->
+    <!-- 3) CREDIT REPORT                                            -->
+    <!-- ---------------------------------------------------------- -->
+    <section id="reportSection" class="hidden">
+      <button class="back-link" onclick="backToDashboard()">&larr; Back to Search</button>
+
+      <div class="card">
+        <div class="subject-bar">
+          <div>
+            <h2 id="rep-name">—</h2>
+            <div class="subject-id" id="rep-idline">—</div>
+          </div>
+          <span class="badge badge-neutral" id="rep-type-badge">PERSON</span>
+        </div>
+
+        <div class="score-panel">
+          <div class="score-ring" id="scoreRing">
+            <div class="score-val" id="rep-score">—</div>
+            <div class="score-max" id="rep-score-max">/ 900</div>
+          </div>
+          <div class="score-meta">
+            <div class="band-label" id="rep-band-label">—</div>
+            <div class="score-interpretation" id="rep-interpretation">—</div>
+          </div>
+        </div>
+
+        <div class="meta-lines">
+          <div>Data Freshness: <b id="rep-lastupdate">—</b> <span id="rep-daysago" class="muted-sm"></span></div>
+          <div class="mon-badge"><span class="mon-dot" id="mon-dot"></span> Monitoring: <b id="rep-monitoring">—</b></div>
+        </div>
+
+        <div class="actions-row">
+          <button class="btn btn-success" onclick="actionApprove()">✓ Approve</button>
+          <button class="btn btn-danger" onclick="actionDecline()">✕ Decline</button>
+          <button class="btn" onclick="openInfoModal()">Request More Info</button>
+          <button class="btn" onclick="actionExportPdf()">Export PDF</button>
+          <button class="btn" onclick="switchTab('api')">View API Response</button>
+          <button class="btn" id="btn-monitoring" onclick="actionToggleMonitoring()">Add to Monitoring</button>
+        </div>
+
+        <div class="tabs-nav">
+          <button class="tab-btn active" data-tab="summary" onclick="switchTab('summary')">Summary</button>
+          <button class="tab-btn" data-tab="credit" onclick="switchTab('credit')">Open &amp; Closed Credit</button>
+          <button class="tab-btn" data-tab="enquiries" onclick="switchTab('enquiries')">Enquiries</button>
+          <button class="tab-btn" data-tab="alerts" onclick="switchTab('alerts')">Alerts</button>
+          <button class="tab-btn" data-tab="audit" onclick="switchTab('audit')">Audit &amp; Disputes</button>
+          <button class="tab-btn" data-tab="api" onclick="switchTab('api')">API Response</button>
+        </div>
+
+        <!-- Summary tab -->
+        <div class="tab-panel active" id="tab-summary">
+          <h3>Key Reasons</h3>
+          <ul class="reasons-list" id="rep-reasons"></ul>
+
+          <h3 style="margin-top:18px;">Snapshot</h3>
+          <div class="snapshot-grid" id="rep-snapshot"></div>
+
+          <div class="guidance-box"><b>Lender Guidance:</b> <span id="rep-guidance"></span></div>
+        </div>
+
+        <!-- Open & closed credit tab -->
+        <div class="tab-panel" id="tab-credit">
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th class="sortable-th" data-sort="product" data-label="Product" onclick="sortTrades('product')">Product</th>
+                <th class="sortable-th" data-sort="lender" data-label="Lender" onclick="sortTrades('lender')">Lender</th>
+                <th>Opened</th><th>Limit / Original</th>
+                <th>Balance</th>
+                <th class="sortable-th" data-sort="status" data-label="Status" onclick="sortTrades('status')">Status</th>
+                <th>Performance</th>
+                <th class="sortable-th" data-sort="lastPayment" data-label="Last Payment" onclick="sortTrades('lastPayment')">Last Payment</th>
+              </tr></thead>
+              <tbody id="rep-trades-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Enquiries tab -->
+        <div class="tab-panel" id="tab-enquiries">
+          <div id="rep-enquiry-cluster"></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Date</th><th>Enquirer</th><th>Type</th><th>Purpose</th><th>Amount</th><th>Decision</th>
+              </tr></thead>
+              <tbody id="rep-enquiries-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Alerts tab -->
+        <div class="tab-panel" id="tab-alerts">
+          <div id="rep-alerts-list"></div>
+        </div>
+
+        <!-- Audit & disputes tab -->
+        <div class="tab-panel" id="tab-audit">
+          <h3>Audit Trail</h3>
+          <div id="rep-audit-list"></div>
+
+          <div class="audit-form">
+            <h4>Add a Note / Dispute</h4>
+            <div class="row">
+              <select id="audit-type">
+                <option value="Note">Note</option>
+                <option value="Dispute">Dispute</option>
+                <option value="Internal Comment">Internal Comment</option>
+              </select>
+            </div>
+            <textarea id="audit-comment" placeholder="Describe the note, dispute, or internal comment..."></textarea>
+            <div class="row">
+              <button class="btn btn-primary" onclick="addManualAuditEntry()">Add to Audit Trail</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- API response tab -->
+        <div class="tab-panel" id="tab-api">
+          <p class="muted-sm">Example JSON payload returned by the BureauInfo API for this subject.</p>
+          <pre class="api-block"><code id="rep-api-json"></code></pre>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="hidden"></div>
+
+<!-- Request more info modal -->
+<div id="modalOverlay" class="hidden">
+  <div class="modal-card">
+    <h3>Request More Information</h3>
+    <div class="modal-sub">Select documents to request from the subject before a final decision.</div>
+    <label class="doc-check" id="doc-payslip-label"><input type="checkbox" id="doc-payslip" value="Latest payslip"> Latest Payslip</label>
+    <label class="doc-check" id="doc-bankstatement-label"><input type="checkbox" id="doc-bankstatement" value="Bank statement (3 months)"> Bank Statement (3 Months)</label>
+    <label class="doc-check" id="doc-address-label"><input type="checkbox" id="doc-address" value="Proof of address"> Proof of Address</label>
+    <label class="doc-check" id="doc-financials-label"><input type="checkbox" id="doc-financials" value="Company financials (last FY)"> Company Financials (Last FY)</label>
+    <label class="doc-check" id="doc-explanation-label"><input type="checkbox" id="doc-explanation" value="Explanation letter for delinquency"> Explanation Letter for Delinquency</label>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeInfoModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="sendInfoRequest()">Send Request</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit profile modal -->
+<div id="profileModalOverlay" class="hidden">
+  <div class="modal-card">
+    <h3>Edit Profile</h3>
+    <div class="modal-sub">Update your portal display name and contact email.</div>
+    <div class="field">
+      <label for="profile-first">First Name</label>
+      <input id="profile-first" type="text">
+    </div>
+    <div class="field">
+      <label for="profile-last">Last Name</label>
+      <input id="profile-last" type="text">
+    </div>
+    <div class="field">
+      <label for="profile-email">Work Email</label>
+      <input id="profile-email" type="email">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeProfileModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   STATE
+   ============================================================ */
+const session = {
+  clientId: 'LEND-1023',
+  firstName: 'Jana',
+  lastName: 'Nováková',
+  email: 'jana.novakova@lenderbank.cz',
+  clientOrg: 'Lenderbank CZ',
+  market: 'CZ',
+  get currentUser(){ return this.firstName.charAt(0) + '. ' + this.lastName; }
+};
+
+let currentSearchType = 'person';   // 'person' | 'company'
+let currentProfile = null;          // profile object currently shown in report
+let recentSearches = [];            // { time, name, type, band }
+let toastTimer = null;
+let tradesSortField = null;         // 'product' | 'lender' | 'status' | 'lastPayment'
+let tradesSortDir = 'asc';          // 'asc' | 'desc'
+
+/* ============================================================
+   MOCK PROFILE DATA
+   Each profile carries everything needed to render Summary,
+   Open & closed credit, Enquiries, Alerts, Audit trail (seed)
+   and the API response tab — kept internally consistent.
+   ============================================================ */
+const PROFILES = {
+
+  /* ---------------- Person: Low risk ---------------- */
+  'anna-novak': {
+    type: 'person', key:'anna-novak',
+    name:'Anna Nováková', dob:'1985-04-12', idLabel:'National ID', idValue:'855412/3344',
+    country:'CZ', city:'Prague',
+    score:782, maxScore:900, band:'low', bandLabel:'Low Risk',
+    interpretation:'Score 782 (Low Risk). Strong repayment history with low utilization and no negative events. Suitable for standard unsecured lending within policy limits.',
+    reasons:[
+      'No negative events in last 24 months.',
+      'Long, stable credit history (11+ years).',
+      'Revolving utilization consistently below 25%.',
+      'All active trades current, 0 days past due.'
+    ],
+    snapshot:{ openTrades:4, totalLimit:24500, totalBalance:5320, worstDelinquency:'0 DPD', derogatory:0 },
+    guidance:'Approved for standard unsecured products up to policy maximum. No additional collateral or documentation required.',
+    lastUpdated:'2026-07-28', monitoring:'active',
+    trades:[
+      { product:'Credit card', lender:'Lenderbank CZ', opened:'2015-03-01', limit:6000, balance:1120, status:'Open', perf:'0 DPD', lastPayment:'2026-07-15' },
+      { product:'Personal loan', lender:'Moneta Consumer', opened:'2020-06-10', limit:12000, balance:3800, status:'Open', perf:'0 DPD', lastPayment:'2026-07-20' },
+      { product:'Overdraft', lender:'CZ Retail Bank', opened:'2018-01-15', limit:2500, balance:400, status:'Open', perf:'0 DPD', lastPayment:'2026-07-25' },
+      { product:'Auto lease', lender:'DriveFin Leasing', opened:'2022-09-05', limit:14000, balance:0, status:'Closed', perf:'Paid as agreed', lastPayment:'2025-09-05' },
+      { product:'Credit card', lender:'PayCard s.r.o.', opened:'2013-11-20', limit:4000, balance:0, status:'Closed', perf:'Paid as agreed', lastPayment:'2019-04-01' }
+    ],
+    enquiries:[
+      { date:'2026-07-28', enquirer:'Lenderbank CZ', type:'Consumer loan', purpose:'Review', amount:null, decision:'Pending' },
+      { date:'2026-04-11', enquirer:'CZ Retail Bank', type:'Credit card', purpose:'Limit increase', amount:2000, decision:'Approved' },
+      { date:'2025-11-02', enquirer:'Telco Mobile CZ', type:'Telco', purpose:'New credit', amount:null, decision:'Approved' }
+    ],
+    alerts:[
+      { date:'2026-06-30', type:'Monitoring summary', severity:'Low', desc:'No new alerts in the last 90 days.' }
+    ]
+  },
+
+  /* ---------------- Person: High risk ---------------- */
+  'john-doe': {
+    type:'person', key:'john-doe',
+    name:'John Doe', dob:'1990-11-02', idLabel:'National ID', idValue:'901102/1234',
+    country:'CZ', city:'Ostrava',
+    score:312, maxScore:900, band:'high', bandLabel:'High Risk',
+    interpretation:'Score 312 (High Risk). Elevated probability of default within 12 months based on severe delinquency and high utilization.',
+    reasons:[
+      'Recent 60+ days past due on credit card.',
+      'High revolving utilization (>80%).',
+      'Multiple recent credit enquiries in last 30 days.',
+      'One charged-off personal loan in last 12 months.',
+      'Address mismatch vs. previous bureau records.'
+    ],
+    snapshot:{ openTrades:5, totalLimit:18800, totalBalance:16650, worstDelinquency:'60+ DPD', derogatory:2 },
+    guidance:'Recommended to decline unsecured credit above EUR 5,000 or require collateral. Escalate for manual underwriting review if proceeding.',
+    lastUpdated:'2026-08-01', monitoring:'active',
+    trades:[
+      { product:'Credit card', lender:'Quick Credit a.s.', opened:'2019-05-14', limit:5000, balance:4700, status:'Open', perf:'60+ DPD', lastPayment:'2026-05-02' },
+      { product:'Personal loan', lender:'FastCash Finance', opened:'2021-02-20', limit:8000, balance:7950, status:'Charged-off', perf:'120+ DPD', lastPayment:'2025-11-10' },
+      { product:'BNPL', lender:'ShopPay Now', opened:'2026-05-01', limit:600, balance:600, status:'Open', perf:'30-59 DPD', lastPayment:'2026-06-01' },
+      { product:'Overdraft', lender:'CZ Retail Bank', opened:'2017-08-01', limit:1200, balance:1150, status:'Open', perf:'0 DPD', lastPayment:'2026-07-28' },
+      { product:'Credit card', lender:'Lenderbank CZ', opened:'2016-01-10', limit:4000, balance:2250, status:'Open', perf:'0 DPD', lastPayment:'2026-07-30' },
+      { product:'Auto loan', lender:'DriveFin Leasing', opened:'2014-03-01', limit:9000, balance:0, status:'Settled', perf:'Settled for less than owed', lastPayment:'2019-07-01' }
+    ],
+    enquiries:[
+      { date:'2026-08-01', enquirer:'Lenderbank CZ', type:'Consumer loan', purpose:'New credit', amount:5000, decision:'Pending' },
+      { date:'2026-07-29', enquirer:'FastCash Finance', type:'Consumer loan', purpose:'New credit', amount:3000, decision:'Declined' },
+      { date:'2026-07-22', enquirer:'ShopPay Now', type:'BNPL', purpose:'New credit', amount:600, decision:'Approved' },
+      { date:'2026-07-10', enquirer:'Quick Credit a.s.', type:'Credit card', purpose:'Limit increase', amount:1000, decision:'Declined' },
+      { date:'2026-02-18', enquirer:'Telco Mobile CZ', type:'Telco', purpose:'New credit', amount:null, decision:'Declined' }
+    ],
+    alerts:[
+      { date:'2026-08-01', type:'Delinquency reported', severity:'High', desc:'New delinquency reported on personal loan (FastCash Finance), 120+ days past due.' },
+      { date:'2026-07-29', type:'Enquiry cluster', severity:'Medium', desc:'4 enquiries recorded in last 30 days across multiple lenders.' },
+      { date:'2026-07-05', type:'Identity check', severity:'Medium', desc:'Address mismatch vs. previous records — current address differs from last verified filing.' },
+      { date:'2026-05-03', type:'Utilization alert', severity:'Medium', desc:'Revolving utilization exceeded 80% across open credit cards.' }
+    ]
+  },
+
+  /* ---------------- Person: Thin file / new to credit ---------------- */
+  'petr-svoboda': {
+    type:'person', key:'petr-svoboda',
+    name:'Petr Svoboda', dob:'2001-02-18', idLabel:'National ID', idValue:'010218/5567',
+    country:'CZ', city:'Plzeň',
+    score:560, maxScore:900, band:'limited', bandLabel:'Limited Data',
+    interpretation:'Score 560 (Limited Data). Insufficient credit history to produce a fully reliable risk estimate — file contains fewer than 12 months of trade activity.',
+    reasons:[
+      'Only 1 open credit line, opened 8 months ago.',
+      'No delinquency history recorded (file too short to confirm pattern).',
+      'No prior bureau enquiries before the last 12 months.',
+      'Score confidence is reduced due to limited data depth.'
+    ],
+    snapshot:{ openTrades:1, totalLimit:1000, totalBalance:180, worstDelinquency:'0 DPD', derogatory:0 },
+    guidance:'Consider a small starter limit (e.g. up to EUR 1,000) with standard monitoring. Re-score after 6–12 months of additional history before extending larger unsecured credit.',
+    lastUpdated:'2026-07-20', monitoring:'not-subscribed',
+    trades:[
+      { product:'Credit card', lender:'Lenderbank CZ', opened:'2025-12-01', limit:1000, balance:180, status:'Open', perf:'0 DPD', lastPayment:'2026-07-05' }
+    ],
+    enquiries:[
+      { date:'2025-12-01', enquirer:'Lenderbank CZ', type:'Credit card', purpose:'New credit', amount:1000, decision:'Approved' }
+    ],
+    alerts:[
+      { date:'2026-06-01', type:'Monitoring summary', severity:'Low', desc:'No new alerts in the last 90 days.' }
+    ]
+  },
+
+  /* ---------------- Company: Stable SME ---------------- */
+  'abc-sro': {
+    type:'company', key:'abc-sro',
+    name:'ABC s.r.o.', dob:'2011-06-01', idLabel:'Registration / VAT ID', idValue:'CZ24681012',
+    country:'CZ', city:'Brno',
+    score:690, maxScore:900, band:'low', bandLabel:'Low Risk',
+    interpretation:'Score 690 (Low Risk). Stable SME with consistent repayment history across business credit lines and no adverse legal events.',
+    reasons:[
+      'All business credit lines current, 0 days past due.',
+      'Consistent revenue and repayment pattern over 5+ years.',
+      'No negative legal or insolvency events on record.',
+      'Moderate leverage relative to reported turnover.'
+    ],
+    snapshot:{ openTrades:3, totalLimit:180000, totalBalance:62000, worstDelinquency:'0 DPD', derogatory:0 },
+    guidance:'Eligible for standard business credit lines up to policy maximum. Annual financial review recommended at renewal.',
+    lastUpdated:'2026-07-15', monitoring:'active',
+    trades:[
+      { product:'Business term loan', lender:'Lenderbank CZ', opened:'2019-04-01', limit:120000, balance:45000, status:'Open', perf:'0 DPD', lastPayment:'2026-07-01' },
+      { product:'Business overdraft', lender:'CZ Corporate Bank', opened:'2016-09-15', limit:30000, balance:9000, status:'Open', perf:'0 DPD', lastPayment:'2026-07-20' },
+      { product:'Equipment lease', lender:'DriveFin Leasing', opened:'2022-01-10', limit:30000, balance:8000, status:'Open', perf:'0 DPD', lastPayment:'2026-07-18' },
+      { product:'Business term loan', lender:'Moneta Business', opened:'2013-05-01', limit:60000, balance:0, status:'Closed', perf:'Paid as agreed', lastPayment:'2018-05-01' }
+    ],
+    enquiries:[
+      { date:'2026-07-15', enquirer:'Lenderbank CZ', type:'Business loan', purpose:'Review', amount:null, decision:'Pending' },
+      { date:'2025-09-01', enquirer:'CZ Corporate Bank', type:'Business loan', purpose:'Limit increase', amount:15000, decision:'Approved' }
+    ],
+    alerts:[
+      { date:'2026-05-20', type:'Registry update', severity:'Low', desc:'Minor update to registered business address confirmed via commercial register.' },
+      { date:'2026-03-01', type:'Monitoring summary', severity:'Low', desc:'No new alerts in the last 90 days.' }
+    ]
+  },
+
+  /* ---------------- Company: Distressed ---------------- */
+  'xyz-holdings': {
+    type:'company', key:'xyz-holdings',
+    name:'XYZ Holdings a.s.', dob:'2008-02-14', idLabel:'Registration / VAT ID', idValue:'CZ99887766',
+    country:'CZ', city:'Prague',
+    score:238, maxScore:900, band:'high', bandLabel:'High Risk',
+    interpretation:'Score 238 (High Risk). Distressed profile with overdue business debt, a recent negative legal event, and deteriorating payment performance.',
+    reasons:[
+      'Business term loan 90+ days past due.',
+      'Negative legal event recorded (payment order filed).',
+      'Recent change of directors reported to commercial register.',
+      'Declining trend in on-time payment ratio over last 12 months.'
+    ],
+    snapshot:{ openTrades:4, totalLimit:410000, totalBalance:365000, worstDelinquency:'90+ DPD', derogatory:2 },
+    guidance:'Decline new unsecured business credit. Existing exposure should be flagged for collections review; require full collateral and personal guarantees for any further extension.',
+    lastUpdated:'2026-07-30', monitoring:'active',
+    trades:[
+      { product:'Business term loan', lender:'CZ Corporate Bank', opened:'2017-03-01', limit:250000, balance:230000, status:'Open', perf:'90+ DPD', lastPayment:'2026-04-15' },
+      { product:'Business overdraft', lender:'Lenderbank CZ', opened:'2015-06-01', limit:60000, balance:59000, status:'Open', perf:'60-89 DPD', lastPayment:'2026-05-20' },
+      { product:'Equipment lease', lender:'DriveFin Leasing', opened:'2020-08-01', limit:80000, balance:76000, status:'Written off', perf:'150+ DPD', lastPayment:'2025-10-01' },
+      { product:'Business term loan', lender:'Moneta Business', opened:'2012-01-01', limit:20000, balance:0, status:'Closed', perf:'Paid as agreed', lastPayment:'2015-01-01' }
+    ],
+    enquiries:[
+      { date:'2026-07-30', enquirer:'Lenderbank CZ', type:'Business loan', purpose:'Review', amount:null, decision:'Pending' },
+      { date:'2026-06-11', enquirer:'CZ Corporate Bank', type:'Business loan', purpose:'New credit', amount:50000, decision:'Declined' },
+      { date:'2026-05-02', enquirer:'FastCash Finance', type:'Business loan', purpose:'New credit', amount:30000, decision:'Declined' }
+    ],
+    alerts:[
+      { date:'2026-07-25', type:'Negative legal event', severity:'High', desc:'Payment order filed against the company by a supplier for an unpaid invoice.' },
+      { date:'2026-07-10', type:'Delinquency reported', severity:'High', desc:'New delinquency reported on business term loan, 90+ days past due.' },
+      { date:'2026-06-15', type:'Governance change', severity:'Medium', desc:'Company registered change of directors with the commercial register.' }
+    ]
+  }
+};
+
+/* Simple accent normalizer so "Novak" also matches "Nováková" etc. */
+function normalize(s){
+  return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+}
+
+/* Build a generic fallback profile from whatever the user typed. */
+function buildGenericProfile(type, displayName, country, idValue){
+  const score = 540;
+  return {
+    type:type, key:'generic-'+Date.now(),
+    name: displayName || (type==='person' ? 'Example Person' : 'Example Company Ltd.'),
+    dob: type==='person' ? '1992-01-01' : '2015-01-01',
+    idLabel: type==='person' ? 'National ID' : 'Registration / VAT ID',
+    idValue: idValue || (type==='person' ? '920101/0000' : 'CZ00000000'),
+    country: country || 'CZ', city:'—',
+    score:score, maxScore:900, band:'medium', bandLabel:'Moderate Risk',
+    interpretation:'Score '+score+' (Moderate Risk). No exact bureau match found for the entered criteria — this is an illustrative example profile generated for demo purposes with average risk characteristics.',
+    reasons:[
+      'No exact match found in bureau records for entered search criteria.',
+      'Example profile shown with representative moderate-risk characteristics.',
+      'One historical late payment older than 24 months.',
+      'Moderate utilization across active credit lines.'
+    ],
+    snapshot:{ openTrades:2, totalLimit: type==='person'?9000:70000, totalBalance: type==='person'?4200:31000, worstDelinquency:'30-59 DPD (historic)', derogatory:0 },
+    guidance:'Standard underwriting applies. Verify identity/registration details manually — no exact bureau match was found for this search.',
+    lastUpdated:'2026-06-10', monitoring:'not-subscribed',
+    trades:[
+      { product: type==='person'?'Credit card':'Business overdraft', lender:'Lenderbank CZ', opened:'2021-01-01', limit: type==='person'?5000:40000, balance: type==='person'?2200:18000, status:'Open', perf:'0 DPD', lastPayment:'2026-06-01' },
+      { product: type==='person'?'Personal loan':'Business term loan', lender:'Moneta Consumer', opened:'2019-05-01', limit: type==='person'?4000:30000, balance:0, status:'Closed', perf:'Paid as agreed', lastPayment:'2022-05-01' }
+    ],
+    enquiries:[
+      { date:'2026-06-10', enquirer:'Lenderbank CZ', type: type==='person'?'Consumer loan':'Business loan', purpose:'New credit', amount: type==='person'?2000:20000, decision:'Pending' }
+    ],
+    alerts:[
+      { date:'2026-05-01', type:'Monitoring summary', severity:'Low', desc:'No new alerts in the last 90 days.' }
+    ]
+  };
+}
+
+/* ============================================================
+   LOGIN
+   ============================================================ */
+function login(){
+  const country = document.getElementById('loginCountry').value;
+  const emailInput = document.getElementById('workEmail').value.trim();
+  if(emailInput) session.email = emailInput;
+  session.market = country;
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('portalScreen').classList.remove('hidden');
+  document.getElementById('marketPill').textContent = 'Market: ' + country;
+  updateTopbarDisplay();
+}
+
+function updateTopbarDisplay(){
+  document.getElementById('clientNameDisplay').textContent = session.firstName + ' ' + session.lastName;
+  document.getElementById('avatarInitials').textContent = (session.firstName.charAt(0) + session.lastName.charAt(0)).toUpperCase();
+}
+
+/* ============================================================
+   EDIT PROFILE
+   ============================================================ */
+function openProfileModal(){
+  document.getElementById('profile-first').value = session.firstName;
+  document.getElementById('profile-last').value = session.lastName;
+  document.getElementById('profile-email').value = session.email;
+  document.getElementById('profileModalOverlay').classList.remove('hidden');
+}
+function closeProfileModal(){
+  document.getElementById('profileModalOverlay').classList.add('hidden');
+}
+function saveProfile(){
+  const first = document.getElementById('profile-first').value.trim();
+  const last = document.getElementById('profile-last').value.trim();
+  const email = document.getElementById('profile-email').value.trim();
+  if(!first || !last || !email){
+    showToast('Please fill in first name, last name, and email.', 'danger');
+    return;
+  }
+  session.firstName = first;
+  session.lastName = last;
+  session.email = email;
+  updateTopbarDisplay();
+  closeProfileModal();
+  showToast('Profile updated.', 'success');
+}
+
+/* ============================================================
+   SEARCH
+   ============================================================ */
+function switchSearchType(type){
+  currentSearchType = type;
+  document.getElementById('toggle-person').classList.toggle('active', type==='person');
+  document.getElementById('toggle-company').classList.toggle('active', type==='company');
+  document.getElementById('personSearchForm').classList.toggle('hidden', type!=='person');
+  document.getElementById('companySearchForm').classList.toggle('hidden', type!=='company');
+  document.getElementById('companySearchError').classList.add('hidden');
+}
+
+function searchPerson(){
+  const first = document.getElementById('p-first').value;
+  const last = document.getElementById('p-last').value;
+  const country = document.getElementById('p-country').value;
+  const nid = document.getElementById('p-nid').value;
+  const full = normalize(first + ' ' + last);
+
+  let profile;
+  if(full.includes('anna') && full.includes('novak')){
+    profile = PROFILES['anna-novak'];
+  } else if(full.includes('john') && full.includes('doe')){
+    profile = PROFILES['john-doe'];
+  } else if(full.includes('petr') && full.includes('svoboda')){
+    profile = PROFILES['petr-svoboda'];
+  } else {
+    const display = (first || last) ? (first+' '+last).trim() : 'Example Person';
+    profile = buildGenericProfile('person', display, country, nid);
+  }
+  openReport(profile);
+}
+
+function searchCompany(){
+  const name = document.getElementById('c-name').value;
+  const country = document.getElementById('c-country').value;
+  const vat = document.getElementById('c-vat').value;
+  const norm = normalize(name);
+  const errEl = document.getElementById('companySearchError');
+  errEl.classList.add('hidden');
+
+  if(norm === 'xyz'){
+    errEl.textContent = 'This company does not exist in ' + country + '.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  let profile;
+  if(norm.includes('abc')){
+    profile = PROFILES['abc-sro'];
+  } else if(norm.includes('xyz')){
+    profile = PROFILES['xyz-holdings'];
+  } else {
+    profile = buildGenericProfile('company', name || 'Example Company Ltd.', country, vat);
+  }
+  openReport(profile);
+}
+
+function addRecentSearch(profile){
+  const time = new Date();
+  recentSearches.unshift({
+    time: time.toLocaleString(),
+    name: profile.name,
+    type: profile.type === 'person' ? 'Person' : 'Company',
+    band: profile.band
+  });
+  recentSearches = recentSearches.slice(0, 8);
+  renderRecentSearches();
+}
+
+function renderRecentSearches(){
+  const body = document.getElementById('recentSearchesBody');
+  if(recentSearches.length === 0){
+    body.innerHTML = '<tr><td colspan="5" class="muted-sm" style="padding:16px 10px;">No searches yet this session.</td></tr>';
+    return;
+  }
+  body.innerHTML = recentSearches.map(r => `
+    <tr>
+      <td>${r.time}</td>
+      <td>${r.name}</td>
+      <td>${r.type}</td>
+      <td>${bandBadge(r.band)}</td>
+      <td><button class="link-btn" onclick="reopenByName('${r.name.replace(/'/g,"\\'")}')">View</button></td>
+    </tr>
+  `).join('');
+}
+
+function reopenByName(name){
+  const match = Object.values(PROFILES).find(p => p.name === name);
+  if(match) openReport(match);
+}
+
+function bandBadge(band){
+  const map = {
+    low: '<span class="badge badge-low">Low Risk</span>',
+    medium: '<span class="badge badge-med">Moderate Risk</span>',
+    high: '<span class="badge badge-high">High Risk</span>',
+    limited: '<span class="badge badge-limited">Limited Data</span>'
+  };
+  return map[band] || '<span class="badge badge-neutral">—</span>';
+}
+
+/* ============================================================
+   REPORT RENDERING
+   ============================================================ */
+function openReport(profile){
+  currentProfile = profile;
+  // seed a fresh audit trail each time a report is opened
+  currentProfile._audit = buildSeedAudit(profile);
+  tradesSortField = null;
+  tradesSortDir = 'asc';
+
+  addRecentSearch(profile);
+
+  document.getElementById('dashboardSection').classList.add('hidden');
+  document.getElementById('reportSection').classList.remove('hidden');
+
+  renderReport();
+  switchTab('summary');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function backToDashboard(){
+  document.getElementById('reportSection').classList.add('hidden');
+  document.getElementById('dashboardSection').classList.remove('hidden');
+}
+
+function buildSeedAudit(profile){
+  const now = new Date();
+  const t1 = new Date(now.getTime() - 3*60000).toLocaleString();
+  return [
+    { time: t1, user: session.currentUser, action:'Report Viewed', desc:`Viewed ${profile.type} report for ${profile.name}.` }
+  ];
+}
+
+const bandColors = {
+  low:    { border:'#1c8a4b', bg:'#e6f6ec', color:'#1c8a4b' },
+  medium: { border:'#a56600', bg:'#fff3dc', color:'#a56600' },
+  high:   { border:'#c0263a', bg:'#fdeaec', color:'#c0263a' },
+  limited:{ border:'#4b5a92', bg:'#eaecf9', color:'#4b5a92' }
+};
+
+function renderReport(){
+  const p = currentProfile;
+
+  document.getElementById('rep-name').textContent = p.name;
+  document.getElementById('rep-type-badge').textContent = p.type === 'person' ? 'PERSON' : 'COMPANY';
+  document.getElementById('rep-idline').textContent =
+    (p.type==='person' ? 'DOB ' + p.dob : 'Registered ' + p.dob) + '  ·  ' + p.idLabel + ': ' + p.idValue + '  ·  ' + p.country + (p.city && p.city !== '—' ? (', ' + p.city) : '');
+
+  document.getElementById('rep-score').textContent = p.score;
+  document.getElementById('rep-score-max').textContent = '/ ' + p.maxScore;
+  document.getElementById('rep-band-label').textContent = p.bandLabel;
+  document.getElementById('rep-interpretation').textContent = p.interpretation;
+
+  const bc = bandColors[p.band];
+  const ring = document.getElementById('scoreRing');
+  ring.style.setProperty('--band-border', bc.border);
+  ring.style.setProperty('--band-bg', bc.bg);
+  ring.style.setProperty('--band-color', bc.color);
+
+  document.getElementById('rep-lastupdate').textContent = p.lastUpdated;
+  document.getElementById('rep-daysago').textContent = '(' + daysSince(p.lastUpdated) + ' days ago)';
+
+  updateMonitoringUI();
+
+  // Summary tab
+  document.getElementById('rep-reasons').innerHTML = p.reasons.map(r => `<li>${r}</li>`).join('');
+  document.getElementById('rep-guidance').textContent = p.guidance;
+  document.getElementById('rep-snapshot').innerHTML = `
+    <div class="snap-card"><div class="snap-val">${p.snapshot.openTrades}</div><div class="snap-lbl">Open Credit Accounts</div></div>
+    <div class="snap-card"><div class="snap-val">€${fmt(p.snapshot.totalLimit)}</div><div class="snap-lbl">Total Credit Limit</div></div>
+    <div class="snap-card"><div class="snap-val">€${fmt(p.snapshot.totalBalance)}</div><div class="snap-lbl">Total Debt Outstanding</div></div>
+    <div class="snap-card"><div class="snap-val">${p.snapshot.worstDelinquency}</div><div class="snap-lbl">Worst Delinquency</div></div>
+    <div class="snap-card"><div class="snap-val">${p.snapshot.derogatory}</div><div class="snap-lbl">Derogatory Items</div></div>
+  `;
+
+  // Trades tab
+  renderTradesTable();
+
+  // Enquiries tab
+  const recentCount = p.enquiries.filter(e => monthsAgo(e.date) <= 1).length;
+  const clusterHtml = recentCount >= 3
+    ? `<div class="cluster-note">⚠ ${recentCount} enquiries recorded in the last 30 days — possible credit-seeking cluster.</div>`
+    : '';
+  document.getElementById('rep-enquiry-cluster').innerHTML = clusterHtml;
+  document.getElementById('rep-enquiries-body').innerHTML = p.enquiries.map(e => `
+    <tr>
+      <td>${e.date}</td>
+      <td>${e.enquirer}</td>
+      <td>${e.type}</td>
+      <td>${e.purpose}</td>
+      <td>${e.amount ? '€'+fmt(e.amount) : '—'}</td>
+      <td>${decisionBadge(e.decision)}</td>
+    </tr>
+  `).join('');
+
+  // Alerts tab
+  document.getElementById('rep-alerts-list').innerHTML = p.alerts.map(a => `
+    <div class="alert-item">
+      <div class="a-date">${a.date}</div>
+      <div class="a-body">
+        <div class="a-title">${severityBadge(a.severity)} ${a.type}</div>
+        <div class="a-desc">${a.desc}</div>
+      </div>
+    </div>
+  `).join('');
+
+  renderAudit();
+  renderApiJson();
+}
+
+function updateMonitoringUI(){
+  const p = currentProfile;
+  const isActive = p.monitoring === 'active';
+  document.getElementById('rep-monitoring').textContent = isActive ? 'Active monitoring' : 'Not subscribed';
+  document.getElementById('mon-dot').classList.toggle('off', !isActive);
+  document.getElementById('btn-monitoring').textContent = isActive ? 'Remove from Monitoring' : 'Add to Monitoring';
+}
+
+function renderAudit(){
+  const list = currentProfile._audit || [];
+  document.getElementById('rep-audit-list').innerHTML = list.map(a => `
+    <div class="audit-item">
+      <div class="au-time">${a.time}</div>
+      <div class="au-body">
+        <div class="au-user">${a.user} — ${a.action}</div>
+        <div class="au-desc">${a.desc}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderApiJson(){
+  const p = currentProfile;
+  const payload = {
+    subject: {
+      type: p.type,
+      name: p.name,
+      [p.type === 'person' ? 'date_of_birth' : 'registration_date']: p.dob,
+      id_type: p.idLabel,
+      id_value: p.idValue,
+      country: p.country,
+      city: p.city
+    },
+    score: p.score,
+    score_max: p.maxScore,
+    risk_band: p.band,
+    summary_reasons: p.reasons,
+    snapshot: p.snapshot,
+    trades: p.trades,
+    enquiries: p.enquiries,
+    alerts: p.alerts,
+    decision_recommendation: p.guidance,
+    data_freshness: {
+      last_updated: p.lastUpdated,
+      days_since_update: daysSince(p.lastUpdated)
+    },
+    monitoring: {
+      status: p.monitoring === 'active' ? 'active' : 'not_subscribed'
+    }
+  };
+  document.getElementById('rep-api-json').textContent = JSON.stringify(payload, null, 2);
+}
+
+/* ---------- small render helpers ---------- */
+function statusBadge(status){
+  const cls = {
+    'Open':'badge-low', 'Closed':'badge-neutral', 'Charged-off':'badge-high',
+    'Written off':'badge-high', 'Settled':'badge-med'
+  }[status] || 'badge-neutral';
+  return `<span class="badge ${cls}">${status}</span>`;
+}
+function decisionBadge(d){
+  const cls = { 'Approved':'badge-low', 'Declined':'badge-high', 'Pending':'badge-med' }[d] || 'badge-neutral';
+  return `<span class="badge ${cls}">${d}</span>`;
+}
+function severityBadge(s){
+  const cls = { 'Low':'badge-low', 'Medium':'badge-med', 'High':'badge-high' }[s] || 'badge-neutral';
+  return `<span class="badge ${cls}">${s}</span>`;
+}
+function fmt(n){ return Number(n).toLocaleString('en-US'); }
+function daysSince(dateStr){
+  const d = new Date(dateStr);
+  const now = new Date('2026-08-02');
+  return Math.max(0, Math.round((now - d) / 86400000));
+}
+function monthsAgo(dateStr){
+  const d = new Date(dateStr);
+  const now = new Date('2026-08-02');
+  return Math.round((now - d) / (86400000*30));
+}
+
+/* ============================================================
+   TABS
+   ============================================================ */
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
+}
+
+/* ============================================================
+   OPEN & CLOSED CREDIT — SORTING
+   ============================================================ */
+function renderTradesTable(){
+  const list = currentProfile.trades.slice();
+  if(tradesSortField){
+    list.sort((a,b) => compareTradeField(a, b, tradesSortField));
+    if(tradesSortDir === 'desc') list.reverse();
+  }
+  document.getElementById('rep-trades-body').innerHTML = list.map(t => `
+    <tr>
+      <td>${t.product}</td>
+      <td>${t.lender}</td>
+      <td>${t.opened}</td>
+      <td>€${fmt(t.limit)}</td>
+      <td>€${fmt(t.balance)}</td>
+      <td>${statusBadge(t.status)}</td>
+      <td>${t.perf}</td>
+      <td>${t.lastPayment}</td>
+    </tr>
+  `).join('');
+  updateTradesSortIndicators();
+}
+
+function compareTradeField(a, b, field){
+  if(field === 'lastPayment'){
+    return new Date(a.lastPayment) - new Date(b.lastPayment);
+  }
+  return String(a[field]).localeCompare(String(b[field]));
+}
+
+function sortTrades(field){
+  if(tradesSortField === field){
+    tradesSortDir = tradesSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    tradesSortField = field;
+    tradesSortDir = 'asc';
+  }
+  renderTradesTable();
+}
+
+function updateTradesSortIndicators(){
+  document.querySelectorAll('#tab-credit th.sortable-th').forEach(th => {
+    const field = th.dataset.sort;
+    const label = th.dataset.label;
+    th.textContent = label + (field === tradesSortField ? (tradesSortDir === 'asc' ? ' ▲' : ' ▼') : '');
+  });
+}
+
+/* ============================================================
+   AUDIT TRAIL
+   ============================================================ */
+function addAuditEntry(action, desc){
+  if(!currentProfile) return;
+  currentProfile._audit.push({
+    time: new Date().toLocaleString(),
+    user: session.currentUser,
+    action: action,
+    desc: desc
+  });
+  renderAudit();
+}
+
+function addManualAuditEntry(){
+  const type = document.getElementById('audit-type').value;
+  const comment = document.getElementById('audit-comment').value.trim();
+  if(!comment){
+    showToast('Please enter a comment before adding to the audit trail.', 'danger');
+    return;
+  }
+  addAuditEntry(type, comment);
+  document.getElementById('audit-comment').value = '';
+  showToast(type + ' added to audit trail.', 'success');
+}
+
+/* ============================================================
+   PRIMARY DECISION ACTIONS
+   ============================================================ */
+function actionApprove(){
+  if(!currentProfile) return;
+  const amount = currentProfile.type === 'person' ? '5,000' : '50,000';
+  addAuditEntry('Decision: Approved', `Approved unsecured ${currentProfile.type === 'person' ? 'loan' : 'business credit line'} up to EUR ${amount}.`);
+  showToast('Application approved. Decision logged to audit trail.', 'success');
+}
+
+function actionDecline(){
+  if(!currentProfile) return;
+  addAuditEntry('Decision: Declined', 'Application declined based on current risk assessment.');
+  showToast('Application declined. Decision logged to audit trail.', 'danger');
+}
+
+function actionExportPdf(){
+  if(!currentProfile) return;
+  addAuditEntry('Export', 'PDF export requested (simulated — no real file generated in this prototype).');
+  showToast('PDF export simulated (no real file generated in prototype).', '');
+}
+
+function actionToggleMonitoring(){
+  if(!currentProfile) return;
+  const wasActive = currentProfile.monitoring === 'active';
+  currentProfile.monitoring = wasActive ? 'not-subscribed' : 'active';
+  updateMonitoringUI();
+  const msg = wasActive ? 'Subject removed from active monitoring.' : 'Subject added to active monitoring.';
+  addAuditEntry('Monitoring', msg);
+  showToast(msg, 'success');
+}
+
+/* ---------- Request more info modal ---------- */
+function openInfoModal(){
+  const isPerson = currentProfile.type === 'person';
+
+  document.getElementById('doc-payslip').disabled = !isPerson;
+  document.getElementById('doc-payslip').checked = isPerson;
+  document.getElementById('doc-payslip-label').classList.toggle('disabled', !isPerson);
+
+  document.getElementById('doc-financials').disabled = isPerson;
+  document.getElementById('doc-financials').checked = !isPerson;
+  document.getElementById('doc-financials-label').classList.toggle('disabled', isPerson);
+
+  document.getElementById('doc-bankstatement').checked = true;
+  document.getElementById('doc-address').checked = false;
+  document.getElementById('doc-explanation').checked = false;
+
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+function closeInfoModal(){
+  document.getElementById('modalOverlay').classList.add('hidden');
+}
+function sendInfoRequest(){
+  const checked = Array.from(document.querySelectorAll('#modalOverlay input[type=checkbox]:checked')).map(c => c.value);
+  closeInfoModal();
+  if(checked.length === 0){
+    showToast('No documents were selected.', 'danger');
+    return;
+  }
+  addAuditEntry('Request More Info', 'Requested from subject: ' + checked.join(', ') + '.');
+  showToast('Information request sent. Logged to audit trail.', 'success');
+}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+function showToast(message, kind){
+  const el = document.getElementById('toast');
+  el.textContent = message;
+  el.className = kind ? kind : '';
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 3600);
+}
+</script>
+</body>
+</html>
