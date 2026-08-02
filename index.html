@@ -18,8 +18,10 @@
      Alerts, Audit & Disputes, API Response.
   4) Actions and the Audit & Disputes note form append client-side entries to the audit trail
      (mock only — nothing persists after a page refresh, no data leaves the browser).
-  5) Click the avatar/name in the top bar to edit the logged-in user's first name, last name,
-     and work email (mock only, session-scoped).
+  5) Click the avatar/name in the top bar to open the account menu: "Account Details" edits
+     first name, last name, and work email; "Password Change" requires the current password
+     (demo password: Lender#2026) and validates the new password against standard rules.
+     Both persist to localStorage so edits survive a page reload / re-login in the same browser.
 
   All data is fictional and hard-coded for demo purposes only.
 -->
@@ -93,7 +95,7 @@
   /* ---------- Login ---------- */
   #loginScreen{
     min-height:100vh;display:flex;align-items:center;justify-content:center;
-    background:linear-gradient(160deg,#0e1f4d 0%,#153aa8 45%,#1c4ed8 100%);
+    background:#E2080A;
     padding:24px;
   }
   .login-card{
@@ -125,10 +127,23 @@
   #topbar .tb-left .word{font-weight:700;font-size:1.05rem;letter-spacing:-.02em;}
   #topbar .tb-right{display:flex;align-items:center;gap:16px;font-size:.85rem;}
   #topbar .market-pill{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.24);padding:4px 10px;border-radius:20px;font-weight:600;}
+  .profile-menu-wrap{position:relative;}
   .profile-trigger{
     display:flex;align-items:center;gap:10px;background:none;border:none;color:inherit;padding:4px 8px;border-radius:8px;cursor:pointer;
   }
   .profile-trigger:hover{background:rgba(255,255,255,.14);}
+  .account-menu{
+    position:absolute;right:0;top:calc(100% + 8px);background:#fff;border:1px solid var(--border);border-radius:10px;
+    box-shadow:0 14px 34px rgba(0,0,0,.2);min-width:190px;padding:6px;z-index:40;
+  }
+  .account-menu-item{
+    display:block;width:100%;text-align:left;background:none;border:none;padding:9px 12px;border-radius:7px;
+    font-size:.88rem;font-weight:600;color:var(--text);cursor:pointer;
+  }
+  .account-menu-item:hover{background:#f3f6fb;}
+  .pw-rules{list-style:none;margin:8px 0 0;padding:0;font-size:.78rem;color:var(--text-faint);}
+  .pw-rules li{padding:2px 0;}
+  .pw-rules li.ok{color:var(--low);font-weight:650;}
   #topbar .avatar{
     width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.24);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#fff;flex:none;
   }
@@ -342,13 +357,19 @@
     </div>
     <div class="tb-right">
       <span class="market-pill" id="marketPill">Market: CZ</span>
-      <button class="profile-trigger" onclick="openProfileModal()" title="Edit profile">
-        <div style="text-align:right;">
-          <div class="client-name" id="clientNameDisplay">Jana Nováková</div>
-          <div class="client-sub">Lenderbank CZ · LEND-1023</div>
+      <div class="profile-menu-wrap">
+        <button class="profile-trigger" onclick="toggleAccountMenu(event)" title="Account menu">
+          <div style="text-align:right;">
+            <div class="client-name" id="clientNameDisplay">Jana Nováková</div>
+            <div class="client-sub">Lenderbank CZ · LEND-1023</div>
+          </div>
+          <div class="avatar" id="avatarInitials">JN</div>
+        </button>
+        <div class="account-menu hidden" id="accountMenu">
+          <button class="account-menu-item" onclick="handleAccountMenuClick('details')">Account Details</button>
+          <button class="account-menu-item" onclick="handleAccountMenuClick('password')">Password Change</button>
         </div>
-        <div class="avatar" id="avatarInitials">JN</div>
-      </button>
+      </div>
     </div>
   </header>
 
@@ -615,10 +636,10 @@
   </div>
 </div>
 
-<!-- Edit profile modal -->
+<!-- Account details modal -->
 <div id="profileModalOverlay" class="hidden">
   <div class="modal-card">
-    <h3>Edit Profile</h3>
+    <h3>Account Details</h3>
     <div class="modal-sub">Update your portal display name and contact email.</div>
     <div class="field">
       <label for="profile-first">First Name</label>
@@ -634,7 +655,38 @@
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeProfileModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
+      <button class="btn btn-primary" onclick="saveAccountDetails()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Password change modal -->
+<div id="passwordModalOverlay" class="hidden">
+  <div class="modal-card">
+    <h3>Password Change</h3>
+    <div class="modal-sub">Enter your current password, then choose a new one.</div>
+    <div class="field">
+      <label for="pw-current">Current Password</label>
+      <input id="pw-current" type="password">
+      <div class="muted-sm" style="margin-top:4px;">Demo hint: current password is <b>Lender#2026</b></div>
+    </div>
+    <div class="field">
+      <label for="pw-new">New Password</label>
+      <input id="pw-new" type="password" oninput="evaluatePasswordRules()">
+      <ul class="pw-rules" id="pwRules">
+        <li id="pwRuleLen">At least 8 characters</li>
+        <li id="pwRuleUpper">At least one uppercase letter</li>
+        <li id="pwRuleNumber">At least one number</li>
+      </ul>
+    </div>
+    <div class="field">
+      <label for="pw-confirm">Confirm New Password</label>
+      <input id="pw-confirm" type="password">
+    </div>
+    <div id="pwFormError" class="form-error hidden"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closePasswordModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitPasswordChange()">Change Password</button>
     </div>
   </div>
 </div>
@@ -648,6 +700,7 @@ const session = {
   firstName: 'Jana',
   lastName: 'Nováková',
   email: 'jana.novakova@lenderbank.cz',
+  password: 'Lender#2026',
   clientOrg: 'Lenderbank CZ',
   market: 'CZ',
   get currentUser(){ return this.firstName.charAt(0) + '. ' + this.lastName; }
@@ -894,7 +947,57 @@ function updateTopbarDisplay(){
 }
 
 /* ============================================================
-   EDIT PROFILE
+   ACCOUNT PERSISTENCE
+   Name/email/password edits are saved to localStorage so they
+   survive a page reload ("another login"), since this prototype
+   has no real backend/session of its own.
+   ============================================================ */
+function persistSession(){
+  try{
+    localStorage.setItem('bureauinfo_account', JSON.stringify({
+      firstName: session.firstName,
+      lastName: session.lastName,
+      email: session.email,
+      password: session.password
+    }));
+  }catch(e){ /* storage unavailable (e.g. private browsing) — changes stay session-only */ }
+}
+function loadPersistedSession(){
+  try{
+    const raw = localStorage.getItem('bureauinfo_account');
+    if(!raw) return;
+    const saved = JSON.parse(raw);
+    if(saved.firstName) session.firstName = saved.firstName;
+    if(saved.lastName) session.lastName = saved.lastName;
+    if(saved.email) session.email = saved.email;
+    if(saved.password) session.password = saved.password;
+  }catch(e){ /* ignore corrupt/blocked storage */ }
+}
+
+/* ============================================================
+   ACCOUNT MENU (avatar dropdown)
+   ============================================================ */
+function toggleAccountMenu(e){
+  e.stopPropagation();
+  document.getElementById('accountMenu').classList.toggle('hidden');
+}
+function closeAccountMenu(){
+  document.getElementById('accountMenu').classList.add('hidden');
+}
+function handleAccountMenuClick(which){
+  closeAccountMenu();
+  if(which === 'details') openProfileModal();
+  else if(which === 'password') openPasswordModal();
+}
+document.addEventListener('click', function(e){
+  const menu = document.getElementById('accountMenu');
+  if(!menu || menu.classList.contains('hidden')) return;
+  const wrap = document.querySelector('.profile-menu-wrap');
+  if(wrap && !wrap.contains(e.target)) closeAccountMenu();
+});
+
+/* ============================================================
+   ACCOUNT DETAILS (first name / last name / email)
    ============================================================ */
 function openProfileModal(){
   document.getElementById('profile-first').value = session.firstName;
@@ -905,7 +1008,12 @@ function openProfileModal(){
 function closeProfileModal(){
   document.getElementById('profileModalOverlay').classList.add('hidden');
 }
-function saveProfile(){
+function joinWithAnd(items){
+  if(items.length === 1) return items[0];
+  if(items.length === 2) return items[0] + ' and ' + items[1];
+  return items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
+}
+function saveAccountDetails(){
   const first = document.getElementById('profile-first').value.trim();
   const last = document.getElementById('profile-last').value.trim();
   const email = document.getElementById('profile-email').value.trim();
@@ -913,12 +1021,80 @@ function saveProfile(){
     showToast('Please fill in first name, last name, and email.', 'danger');
     return;
   }
+
+  const changed = [];
+  if(first !== session.firstName) changed.push('first name');
+  if(last !== session.lastName) changed.push('last name');
+  if(email !== session.email) changed.push('e-mail');
+
   session.firstName = first;
   session.lastName = last;
   session.email = email;
+  persistSession();
   updateTopbarDisplay();
   closeProfileModal();
-  showToast('Profile updated.', 'success');
+
+  if(changed.length > 0){
+    const label = joinWithAnd(changed);
+    showToast(label.charAt(0).toUpperCase() + label.slice(1) + ' successfully changed.', 'success');
+  }
+}
+
+/* ============================================================
+   PASSWORD CHANGE
+   ============================================================ */
+function evaluatePasswordRules(){
+  const val = document.getElementById('pw-new').value;
+  const rules = [
+    { id:'pwRuleLen', ok: val.length >= 8, label:'At least 8 characters' },
+    { id:'pwRuleUpper', ok: /[A-Z]/.test(val), label:'At least one uppercase letter' },
+    { id:'pwRuleNumber', ok: /[0-9]/.test(val), label:'At least one number' }
+  ];
+  rules.forEach(r => {
+    const el = document.getElementById(r.id);
+    el.textContent = (r.ok ? '✓ ' : '• ') + r.label;
+    el.classList.toggle('ok', r.ok);
+  });
+  return rules.every(r => r.ok);
+}
+function openPasswordModal(){
+  document.getElementById('pw-current').value = '';
+  document.getElementById('pw-new').value = '';
+  document.getElementById('pw-confirm').value = '';
+  document.getElementById('pwFormError').classList.add('hidden');
+  evaluatePasswordRules();
+  document.getElementById('passwordModalOverlay').classList.remove('hidden');
+}
+function closePasswordModal(){
+  document.getElementById('passwordModalOverlay').classList.add('hidden');
+}
+function submitPasswordChange(){
+  const current = document.getElementById('pw-current').value;
+  const next = document.getElementById('pw-new').value;
+  const confirmVal = document.getElementById('pw-confirm').value;
+  const errEl = document.getElementById('pwFormError');
+  errEl.classList.add('hidden');
+
+  if(current !== session.password){
+    errEl.textContent = 'Current password is incorrect.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if(!evaluatePasswordRules()){
+    errEl.textContent = 'New password does not meet the requirements below.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if(next !== confirmVal){
+    errEl.textContent = 'New password and confirmation do not match.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  session.password = next;
+  persistSession();
+  closePasswordModal();
+  showToast('Password successfully changed.', 'success');
 }
 
 /* ============================================================
@@ -1372,6 +1548,12 @@ function showToast(message, kind){
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add('hidden'), 3600);
 }
+
+/* ============================================================
+   INIT — restore any persisted account edits before login
+   ============================================================ */
+loadPersistedSession();
+document.getElementById('workEmail').value = session.email;
 </script>
 </body>
 </html>
