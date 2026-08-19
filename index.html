@@ -6,7 +6,10 @@
   No build step, no server, no external network calls required.
 
   MAIN FLOWS
-  1) Login screen -> "Login to BureauInfo" (any input works, login always succeeds).
+  1) Login screen -> "Login to BureauInfo". Authentication is real against a fixed list of
+     100 test accounts (25 each for CZ/SK/PL/DE — see the accompanying spreadsheet). A wrong
+     email or password shows "Incorrect email address or password." and login is blocked.
+     Prefilled demo account: jana.novakova@lenderbank.cz / Lender#2026.
   2) Portal dashboard -> search a Person or a Company. Try: "Anna Novak" (CZ, low risk),
      "John Doe" (CZ, high risk), "Petr Svoboda" (thin file), "ABC s.r.o." (stable SME company),
      "XYZ Holdings" (distressed company). "XYZ" alone shows a not-found error. Any other name
@@ -18,6 +21,12 @@
      Alerts, Audit & Disputes, API Response.
   4) Actions and the Audit & Disputes note form append client-side entries to the audit trail
      (mock only — nothing persists after a page refresh, no data leaves the browser).
+  4b) Below the search panel, "Early Warning & Financial Exposure Monitoring" shows a portfolio
+      of 8 monitored companies (sortable by Deterioration and Exposure). "View Report" opens a
+      per-company Early Warning & Financial Exposure Report: 90-day deterioration indicator
+      (Stable / Watch / Urgent), the five early-warning driver categories, estimated exposure,
+      recommended actions, alerts, and an audit/review trail. No autonomous credit decisions are
+      made here — only "Mark as Reviewed" / "Escalate for Manual Review" logging actions.
   5) Click the avatar/name in the top bar to open the account menu: "Account Details" edits
      first name, last name, and work email; "Password Change" requires the current password
      (demo password: Lender#2026) and validates the new password against standard rules.
@@ -328,20 +337,12 @@
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input id="password" type="password" placeholder="••••••••" value="••••••••">
+        <input id="password" type="password" placeholder="••••••••" value="Lender#2026">
       </div>
-      <div class="field">
-        <label for="loginCountry">Country</label>
-        <select id="loginCountry">
-          <option value="CZ" selected>Czech Republic (CZ)</option>
-          <option value="SK">Slovakia (SK)</option>
-          <option value="PL">Poland (PL)</option>
-          <option value="DE">Germany (DE)</option>
-        </select>
-      </div>
+      <div id="loginError" class="form-error hidden"></div>
       <button class="btn btn-primary btn-block" onclick="login()">Login to BureauInfo</button>
     </form>
-    <div class="login-footnote">Demo prototype · credentials are not validated · all data is fictional</div>
+    <div class="login-footnote">Demo prototype · sign in with one of the 100 issued test accounts · all data is fictional</div>
   </div>
 </div>
 
@@ -485,6 +486,90 @@
           <p class="muted-sm" style="margin-top:12px;">Prices shown for illustration only.</p>
         </div>
 
+      </div>
+
+      <!-- Early Warning & Financial Exposure Monitoring -->
+      <div class="card" style="margin-top:16px;">
+        <h2>Early Warning &amp; Financial Exposure Monitoring</h2>
+        <p class="muted-sm" style="margin-bottom:14px;">Portfolio-level monitoring for existing customers: a 90-day deterioration indicator, early-warning drivers, estimated exposure, and recommended actions — for human review only, no autonomous credit decisions.</p>
+        <div class="table-wrap" id="ewPortfolioTableWrap">
+          <table>
+            <thead><tr>
+              <th>Company</th><th>Country</th>
+              <th class="sortable-th" data-sort="probability" data-label="Deterioration" onclick="sortPortfolio('probability')">Deterioration</th>
+              <th class="sortable-th" data-sort="exposure" data-label="Exposure" onclick="sortPortfolio('exposure')">Exposure</th>
+              <th>Top Driver</th><th>Updated</th><th></th>
+            </tr></thead>
+            <tbody id="ewPortfolioBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------------------- -->
+    <!-- EARLY WARNING & FINANCIAL EXPOSURE REPORT (per-company)      -->
+    <!-- ---------------------------------------------------------- -->
+    <section id="ewReportSection" class="hidden">
+      <button class="back-link" onclick="backToPortfolio()">&larr; Back to Portfolio</button>
+
+      <div class="card">
+        <div class="subject-bar">
+          <div>
+            <h2 id="ew-name">—</h2>
+            <div class="subject-id" id="ew-idline">—</div>
+          </div>
+          <span class="badge badge-neutral">COMPANY</span>
+        </div>
+
+        <div class="score-panel">
+          <div class="score-ring" id="ewRing">
+            <div class="score-val" id="ew-prob">—</div>
+            <div class="score-max">90-day risk</div>
+          </div>
+          <div class="score-meta">
+            <div class="band-label" id="ew-band-label">—</div>
+            <div class="score-interpretation" id="ew-interpretation">—</div>
+          </div>
+        </div>
+
+        <div class="meta-lines">
+          <div>Data Freshness: <b id="ew-lastupdate">—</b> <span id="ew-daysago" class="muted-sm"></span></div>
+          <div class="muted-sm">Source: <span id="ew-source">—</span></div>
+        </div>
+
+        <div class="actions-row">
+          <button class="btn" onclick="ewExportPdf()">Export PDF</button>
+          <button class="btn btn-success" onclick="ewMarkReviewed()">Mark as Reviewed</button>
+          <button class="btn btn-danger" onclick="ewEscalate()">Escalate for Manual Review</button>
+        </div>
+
+        <h3 style="margin-top:22px;">Early-Warning Drivers</h3>
+        <div id="ew-drivers"></div>
+
+        <h3 style="margin-top:22px;">Estimated Exposure</h3>
+        <div class="snapshot-grid" id="ew-exposure" style="grid-template-columns:repeat(3,1fr);"></div>
+
+        <div class="guidance-box" style="margin-top:18px;"><b>Recommended Actions:</b> <span id="ew-actions"></span></div>
+
+        <h3 style="margin-top:22px;">Alerts</h3>
+        <div id="ew-alerts"></div>
+
+        <h3 style="margin-top:22px;">Audit &amp; Review Trail</h3>
+        <div id="ew-audit"></div>
+        <div class="audit-form">
+          <h4>Add a Note</h4>
+          <div class="row">
+            <select id="ew-note-type">
+              <option value="Note">Note</option>
+              <option value="Action Taken">Action Taken</option>
+              <option value="Escalation">Escalation</option>
+            </select>
+          </div>
+          <textarea id="ew-note-comment" placeholder="Describe the note or action taken..."></textarea>
+          <div class="row">
+            <button class="btn btn-primary" onclick="ewAddNote()">Add to Audit Trail</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -669,7 +754,7 @@
     <div class="field">
       <label for="pw-current">Current Password</label>
       <input id="pw-current" type="password">
-      <div class="muted-sm" style="margin-top:4px;">Demo hint: current password is <b>Lender#2026</b></div>
+      <div class="muted-sm" style="margin-top:4px;">Tip: this is the password you used to log in.</div>
     </div>
     <div class="field">
       <label for="pw-new">New Password</label>
@@ -698,14 +783,126 @@
    ============================================================ */
 const session = {
   clientId: 'LEND-1023',
-  firstName: 'Jana',
-  lastName: 'Nováková',
-  email: 'jana.novakova@lenderbank.cz',
-  password: 'Lender#2026',
+  firstName: '',
+  lastName: '',
+  email: '',
+  password: '',
   clientOrg: 'Lenderbank',
   market: 'CZ',
-  get currentUser(){ return this.firstName.charAt(0) + '. ' + this.lastName; }
+  loginKey: null,
+  get currentUser(){ return (this.firstName ? this.firstName.charAt(0) + '. ' : '') + this.lastName; }
 };
+
+/* ============================================================
+   CREDENTIALS
+   The only 100 accounts that can authenticate (25 per market).
+   See the accompanying spreadsheet for the same list.
+   ============================================================ */
+const CREDENTIALS = [
+  { email:'jana.novakova@lenderbank.cz', password:'Lender#2026', firstName:'Jana', lastName:'Nováková', country:'CZ' },
+  { email:'petr.svoboda@lenderbank.cz', password:'PetrCZ02!', firstName:'Petr', lastName:'Svoboda', country:'CZ' },
+  { email:'anna.dvorakova@lenderbank.cz', password:'AnnaCZ03!', firstName:'Anna', lastName:'Dvořáková', country:'CZ' },
+  { email:'tomas.cerny@lenderbank.cz', password:'TomasCZ04!', firstName:'Tomáš', lastName:'Černý', country:'CZ' },
+  { email:'eva.prochazkova@lenderbank.cz', password:'EvaCZ05!', firstName:'Eva', lastName:'Procházková', country:'CZ' },
+  { email:'martin.kucera@lenderbank.cz', password:'MartinCZ06!', firstName:'Martin', lastName:'Kučera', country:'CZ' },
+  { email:'lucie.novotna@lenderbank.cz', password:'LucieCZ07!', firstName:'Lucie', lastName:'Novotná', country:'CZ' },
+  { email:'jiri.marik@lenderbank.cz', password:'JiriCZ08!', firstName:'Jiří', lastName:'Mařík', country:'CZ' },
+  { email:'hana.vesela@lenderbank.cz', password:'HanaCZ09!', firstName:'Hana', lastName:'Veselá', country:'CZ' },
+  { email:'michal.horak@lenderbank.cz', password:'MichalCZ10!', firstName:'Michal', lastName:'Horák', country:'CZ' },
+  { email:'jana.pokorna@lenderbank.cz', password:'JanaCZ11!', firstName:'Jana', lastName:'Pokorná', country:'CZ' },
+  { email:'petr.jelinek@lenderbank.cz', password:'PetrCZ12!', firstName:'Petr', lastName:'Jelínek', country:'CZ' },
+  { email:'anna.blazkova@lenderbank.cz', password:'AnnaCZ13!', firstName:'Anna', lastName:'Blažková', country:'CZ' },
+  { email:'tomas.kral@lenderbank.cz', password:'TomasCZ14!', firstName:'Tomáš', lastName:'Král', country:'CZ' },
+  { email:'eva.sedlackova@lenderbank.cz', password:'EvaCZ15!', firstName:'Eva', lastName:'Sedláčková', country:'CZ' },
+  { email:'martin.novy@lenderbank.cz', password:'MartinCZ16!', firstName:'Martin', lastName:'Nový', country:'CZ' },
+  { email:'lucie.benesova@lenderbank.cz', password:'LucieCZ17!', firstName:'Lucie', lastName:'Benešová', country:'CZ' },
+  { email:'jiri.kolar@lenderbank.cz', password:'JiriCZ18!', firstName:'Jiří', lastName:'Kolář', country:'CZ' },
+  { email:'hana.urbanova@lenderbank.cz', password:'HanaCZ19!', firstName:'Hana', lastName:'Urbanová', country:'CZ' },
+  { email:'michal.dolezal@lenderbank.cz', password:'MichalCZ20!', firstName:'Michal', lastName:'Doležal', country:'CZ' },
+  { email:'jana.hajkova@lenderbank.cz', password:'JanaCZ21!', firstName:'Jana', lastName:'Hájková', country:'CZ' },
+  { email:'petr.simek@lenderbank.cz', password:'PetrCZ22!', firstName:'Petr', lastName:'Šimek', country:'CZ' },
+  { email:'anna.pospisilova@lenderbank.cz', password:'AnnaCZ23!', firstName:'Anna', lastName:'Pospíšilová', country:'CZ' },
+  { email:'tomas.varga@lenderbank.cz', password:'TomasCZ24!', firstName:'Tomáš', lastName:'Varga', country:'CZ' },
+  { email:'eva.malikova@lenderbank.cz', password:'EvaCZ25!', firstName:'Eva', lastName:'Malíková', country:'CZ' },
+
+  { email:'peter.kovac@lenderbank.sk', password:'PeterSK01!', firstName:'Peter', lastName:'Kováč', country:'SK' },
+  { email:'jana.baranova@lenderbank.sk', password:'JanaSK02!', firstName:'Jana', lastName:'Baranová', country:'SK' },
+  { email:'martin.horvath@lenderbank.sk', password:'MartinSK03!', firstName:'Martin', lastName:'Horváth', country:'SK' },
+  { email:'zuzana.kollarova@lenderbank.sk', password:'ZuzanaSK04!', firstName:'Zuzana', lastName:'Kollárová', country:'SK' },
+  { email:'michal.varga@lenderbank.sk', password:'MichalSK05!', firstName:'Michal', lastName:'Varga', country:'SK' },
+  { email:'katarina.petrova@lenderbank.sk', password:'KatarinaSK06!', firstName:'Katarína', lastName:'Petrová', country:'SK' },
+  { email:'tomas.toth@lenderbank.sk', password:'TomasSK07!', firstName:'Tomáš', lastName:'Tóth', country:'SK' },
+  { email:'lucia.sabova@lenderbank.sk', password:'LuciaSK08!', firstName:'Lucia', lastName:'Sabová', country:'SK' },
+  { email:'jan.nagy@lenderbank.sk', password:'JanSK09!', firstName:'Ján', lastName:'Nagy', country:'SK' },
+  { email:'veronika.duricova@lenderbank.sk', password:'VeronikaSK10!', firstName:'Veronika', lastName:'Ďuricová', country:'SK' },
+  { email:'peter.balaz@lenderbank.sk', password:'PeterSK11!', firstName:'Peter', lastName:'Baláž', country:'SK' },
+  { email:'jana.krizova@lenderbank.sk', password:'JanaSK12!', firstName:'Jana', lastName:'Krížová', country:'SK' },
+  { email:'martin.simko@lenderbank.sk', password:'MartinSK13!', firstName:'Martin', lastName:'Šimko', country:'SK' },
+  { email:'zuzana.molnarova@lenderbank.sk', password:'ZuzanaSK14!', firstName:'Zuzana', lastName:'Molnárová', country:'SK' },
+  { email:'michal.petrik@lenderbank.sk', password:'MichalSK15!', firstName:'Michal', lastName:'Petrík', country:'SK' },
+  { email:'katarina.fabianova@lenderbank.sk', password:'KatarinaSK16!', firstName:'Katarína', lastName:'Fabiánová', country:'SK' },
+  { email:'tomas.novak@lenderbank.sk', password:'TomasSK17!', firstName:'Tomáš', lastName:'Novák', country:'SK' },
+  { email:'lucia.michalikova@lenderbank.sk', password:'LuciaSK18!', firstName:'Lucia', lastName:'Michalíková', country:'SK' },
+  { email:'jan.kucera@lenderbank.sk', password:'JanSK19!', firstName:'Ján', lastName:'Kučera', country:'SK' },
+  { email:'veronika.bartosova@lenderbank.sk', password:'VeronikaSK20!', firstName:'Veronika', lastName:'Bartošová', country:'SK' },
+  { email:'peter.krajci@lenderbank.sk', password:'PeterSK21!', firstName:'Peter', lastName:'Krajčí', country:'SK' },
+  { email:'jana.gasparova@lenderbank.sk', password:'JanaSK22!', firstName:'Jana', lastName:'Gašparová', country:'SK' },
+  { email:'martin.polacek@lenderbank.sk', password:'MartinSK23!', firstName:'Martin', lastName:'Poláček', country:'SK' },
+  { email:'zuzana.turcanova@lenderbank.sk', password:'ZuzanaSK24!', firstName:'Zuzana', lastName:'Turčanová', country:'SK' },
+  { email:'michal.urban@lenderbank.sk', password:'MichalSK25!', firstName:'Michal', lastName:'Urban', country:'SK' },
+
+  { email:'anna.kowalska@lenderbank.pl', password:'AnnaPL01!', firstName:'Anna', lastName:'Kowalska', country:'PL' },
+  { email:'piotr.kowalski@lenderbank.pl', password:'PiotrPL02!', firstName:'Piotr', lastName:'Kowalski', country:'PL' },
+  { email:'katarzyna.wisniewska@lenderbank.pl', password:'KatarzynaPL03!', firstName:'Katarzyna', lastName:'Wiśniewska', country:'PL' },
+  { email:'tomasz.nowak@lenderbank.pl', password:'TomaszPL04!', firstName:'Tomasz', lastName:'Nowak', country:'PL' },
+  { email:'magdalena.kaminska@lenderbank.pl', password:'MagdalenaPL05!', firstName:'Magdalena', lastName:'Kamińska', country:'PL' },
+  { email:'krzysztof.wojcik@lenderbank.pl', password:'KrzysztofPL06!', firstName:'Krzysztof', lastName:'Wójcik', country:'PL' },
+  { email:'agnieszka.zielinska@lenderbank.pl', password:'AgnieszkaPL07!', firstName:'Agnieszka', lastName:'Zielińska', country:'PL' },
+  { email:'marcin.kowalczyk@lenderbank.pl', password:'MarcinPL08!', firstName:'Marcin', lastName:'Kowalczyk', country:'PL' },
+  { email:'ewa.dabrowska@lenderbank.pl', password:'EwaPL09!', firstName:'Ewa', lastName:'Dąbrowska', country:'PL' },
+  { email:'pawel.lewandowski@lenderbank.pl', password:'PawelPL10!', firstName:'Paweł', lastName:'Lewandowski', country:'PL' },
+  { email:'anna.jankowska@lenderbank.pl', password:'AnnaPL11!', firstName:'Anna', lastName:'Jankowska', country:'PL' },
+  { email:'piotr.szymanski@lenderbank.pl', password:'PiotrPL12!', firstName:'Piotr', lastName:'Szymański', country:'PL' },
+  { email:'katarzyna.kwiatkowska@lenderbank.pl', password:'KatarzynaPL13!', firstName:'Katarzyna', lastName:'Kwiatkowska', country:'PL' },
+  { email:'tomasz.wozniak@lenderbank.pl', password:'TomaszPL14!', firstName:'Tomasz', lastName:'Woźniak', country:'PL' },
+  { email:'magdalena.piotrowska@lenderbank.pl', password:'MagdalenaPL15!', firstName:'Magdalena', lastName:'Piotrowska', country:'PL' },
+  { email:'krzysztof.kozlowski@lenderbank.pl', password:'KrzysztofPL16!', firstName:'Krzysztof', lastName:'Kozłowski', country:'PL' },
+  { email:'agnieszka.nowakowska@lenderbank.pl', password:'AgnieszkaPL17!', firstName:'Agnieszka', lastName:'Nowakowska', country:'PL' },
+  { email:'marcin.mazur@lenderbank.pl', password:'MarcinPL18!', firstName:'Marcin', lastName:'Mazur', country:'PL' },
+  { email:'ewa.michalska@lenderbank.pl', password:'EwaPL19!', firstName:'Ewa', lastName:'Michalska', country:'PL' },
+  { email:'pawel.krawczyk@lenderbank.pl', password:'PawelPL20!', firstName:'Paweł', lastName:'Krawczyk', country:'PL' },
+  { email:'anna.adamska@lenderbank.pl', password:'AnnaPL21!', firstName:'Anna', lastName:'Adamska', country:'PL' },
+  { email:'piotr.grabowski@lenderbank.pl', password:'PiotrPL22!', firstName:'Piotr', lastName:'Grabowski', country:'PL' },
+  { email:'katarzyna.wojciechowska@lenderbank.pl', password:'KatarzynaPL23!', firstName:'Katarzyna', lastName:'Wojciechowska', country:'PL' },
+  { email:'tomasz.pawlowski@lenderbank.pl', password:'TomaszPL24!', firstName:'Tomasz', lastName:'Pawłowski', country:'PL' },
+  { email:'magdalena.zalewska@lenderbank.pl', password:'MagdalenaPL25!', firstName:'Magdalena', lastName:'Zalewska', country:'PL' },
+
+  { email:'anna.muller@lenderbank.de', password:'AnnaDE01!', firstName:'Anna', lastName:'Müller', country:'DE' },
+  { email:'lukas.schmidt@lenderbank.de', password:'LukasDE02!', firstName:'Lukas', lastName:'Schmidt', country:'DE' },
+  { email:'julia.schneider@lenderbank.de', password:'JuliaDE03!', firstName:'Julia', lastName:'Schneider', country:'DE' },
+  { email:'max.fischer@lenderbank.de', password:'MaxDE04!', firstName:'Max', lastName:'Fischer', country:'DE' },
+  { email:'laura.weber@lenderbank.de', password:'LauraDE05!', firstName:'Laura', lastName:'Weber', country:'DE' },
+  { email:'felix.meyer@lenderbank.de', password:'FelixDE06!', firstName:'Felix', lastName:'Meyer', country:'DE' },
+  { email:'sophie.wagner@lenderbank.de', password:'SophieDE07!', firstName:'Sophie', lastName:'Wagner', country:'DE' },
+  { email:'jonas.becker@lenderbank.de', password:'JonasDE08!', firstName:'Jonas', lastName:'Becker', country:'DE' },
+  { email:'lena.schulz@lenderbank.de', password:'LenaDE09!', firstName:'Lena', lastName:'Schulz', country:'DE' },
+  { email:'paul.hoffmann@lenderbank.de', password:'PaulDE10!', firstName:'Paul', lastName:'Hoffmann', country:'DE' },
+  { email:'anna.koch@lenderbank.de', password:'AnnaDE11!', firstName:'Anna', lastName:'Koch', country:'DE' },
+  { email:'lukas.bauer@lenderbank.de', password:'LukasDE12!', firstName:'Lukas', lastName:'Bauer', country:'DE' },
+  { email:'julia.richter@lenderbank.de', password:'JuliaDE13!', firstName:'Julia', lastName:'Richter', country:'DE' },
+  { email:'max.klein@lenderbank.de', password:'MaxDE14!', firstName:'Max', lastName:'Klein', country:'DE' },
+  { email:'laura.wolf@lenderbank.de', password:'LauraDE15!', firstName:'Laura', lastName:'Wolf', country:'DE' },
+  { email:'felix.schroder@lenderbank.de', password:'FelixDE16!', firstName:'Felix', lastName:'Schröder', country:'DE' },
+  { email:'sophie.neumann@lenderbank.de', password:'SophieDE17!', firstName:'Sophie', lastName:'Neumann', country:'DE' },
+  { email:'jonas.schwarz@lenderbank.de', password:'JonasDE18!', firstName:'Jonas', lastName:'Schwarz', country:'DE' },
+  { email:'lena.zimmermann@lenderbank.de', password:'LenaDE19!', firstName:'Lena', lastName:'Zimmermann', country:'DE' },
+  { email:'paul.braun@lenderbank.de', password:'PaulDE20!', firstName:'Paul', lastName:'Braun', country:'DE' },
+  { email:'anna.kruger@lenderbank.de', password:'AnnaDE21!', firstName:'Anna', lastName:'Krüger', country:'DE' },
+  { email:'lukas.hofmann@lenderbank.de', password:'LukasDE22!', firstName:'Lukas', lastName:'Hofmann', country:'DE' },
+  { email:'julia.hartmann@lenderbank.de', password:'JuliaDE23!', firstName:'Julia', lastName:'Hartmann', country:'DE' },
+  { email:'max.lange@lenderbank.de', password:'MaxDE24!', firstName:'Max', lastName:'Lange', country:'DE' },
+  { email:'laura.werner@lenderbank.de', password:'LauraDE25!', firstName:'Laura', lastName:'Werner', country:'DE' }
+];
 
 let currentSearchType = 'person';   // 'person' | 'company'
 let currentProfile = null;          // profile object currently shown in report
@@ -889,6 +1086,331 @@ const PROFILES = {
   }
 };
 
+/* ============================================================
+   EARLY WARNING & FINANCIAL EXPOSURE MONITORING
+   Per the business case: a portfolio dashboard for existing
+   customers showing a 90-day deterioration indicator (stable /
+   watch / urgent), the five early-warning driver categories,
+   estimated exposure, and recommended actions — for human
+   review only. No autonomous credit decisions are made here.
+   ============================================================ */
+const EW_PORTFOLIO = [
+  {
+    id:'xyz-holdings-ew', name:'XYZ Holdings a.s.', country:'CZ', regId:'CZ99887766', registeredDate:'2008-02-14',
+    band:'urgent', probability:82,
+    interpretation:'Urgent: multiple concurrent deterioration signals (payment delays, legal action, weakening financial ratios) indicate elevated near-term default risk.',
+    lastUpdated:'2026-08-01', dataSource:'BureauInfo registry feed + commercial register + customer-provided exposure data',
+    drivers:[
+      { category:'Payment delays', active:true, severity:'High', detail:'Business term loan and overdraft both 60+ days past due; open invoice #4521 overdue 92 days (€62,000).' },
+      { category:'New legal events', active:true, severity:'High', detail:'Payment order filed against the company by a supplier for an unpaid invoice, 2026-07-25.' },
+      { category:'Worsening financial ratios', active:true, severity:'Medium', detail:'Current ratio fell from 1.4 to 0.9 between Q1 and Q2 2026.' },
+      { category:'Ownership / director changes', active:true, severity:'Medium', detail:'Change of directors registered with the commercial register, 2026-06-15.' },
+      { category:'VAT / tax issues', active:false, severity:'Low', detail:'No VAT or tax irregularities currently reported.' }
+    ],
+    exposure:{ openInvoices:185000, creditLimit:250000, supplierDependency:34 },
+    recommendedActions:['Reduce credit limit', 'Request additional security or collateral', 'Escalate for manual review'],
+    alerts:[
+      { date:'2026-07-25', type:'Negative legal event', severity:'High', desc:'Payment order filed against the company by a supplier for an unpaid invoice.' },
+      { date:'2026-07-10', type:'Payment delay', severity:'High', desc:'Business term loan reported 90+ days past due.' },
+      { date:'2026-06-15', type:'Governance change', severity:'Medium', desc:'Change of directors registered with the commercial register.' }
+    ]
+  },
+  {
+    id:'abc-sro-ew', name:'ABC s.r.o.', country:'CZ', regId:'CZ24681012', registeredDate:'2011-06-01',
+    band:'stable', probability:6,
+    interpretation:'Stable: no active deterioration drivers. Payment behaviour, financial ratios and governance remain consistent with prior periods.',
+    lastUpdated:'2026-07-15', dataSource:'BureauInfo registry feed + commercial register + customer-provided exposure data',
+    drivers:[
+      { category:'Payment delays', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'New legal events', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'Worsening financial ratios', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'Ownership / director changes', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'VAT / tax issues', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' }
+    ],
+    exposure:{ openInvoices:18000, creditLimit:120000, supplierDependency:8 },
+    recommendedActions:['Continue standard monitoring'],
+    alerts:[]
+  },
+  {
+    id:'nordkorn-ew', name:'Nordkorn Distribuce s.r.o.', country:'CZ', regId:'CZ55219087', registeredDate:'2015-09-20',
+    band:'watch', probability:41,
+    interpretation:'Watch: emerging payment delays and softening financial ratios warrant closer monitoring, though no legal or governance events have been recorded.',
+    lastUpdated:'2026-07-28', dataSource:'BureauInfo registry feed + commercial register + customer-provided exposure data',
+    drivers:[
+      { category:'Payment delays', active:true, severity:'Medium', detail:'Two invoices totalling €21,000 now 30-45 days past due.' },
+      { category:'New legal events', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'Worsening financial ratios', active:true, severity:'Medium', detail:'Debt-to-equity ratio increased from 1.1 to 1.6 over the last two quarters.' },
+      { category:'Ownership / director changes', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'VAT / tax issues', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' }
+    ],
+    exposure:{ openInvoices:54000, creditLimit:90000, supplierDependency:22 },
+    recommendedActions:['Review manually within 30 days', 'Increase monitoring frequency'],
+    alerts:[
+      { date:'2026-07-20', type:'Payment delay', severity:'Medium', desc:'Two invoices totalling €21,000 now 30-45 days past due.' },
+      { date:'2026-06-30', type:'Financial ratio alert', severity:'Medium', desc:'Debt-to-equity ratio increased from 1.1 to 1.6 over the last two quarters.' }
+    ]
+  },
+  {
+    id:'tatrastav-ew', name:'TatraStav s.r.o.', country:'SK', regId:'SK41236659', registeredDate:'2012-03-11',
+    band:'watch', probability:38,
+    interpretation:'Watch: a late VAT filing and a recent director change have been flagged; payment and financial performance remain within normal range.',
+    lastUpdated:'2026-07-22', dataSource:'BureauInfo registry feed + commercial register + customer-provided exposure data',
+    drivers:[
+      { category:'Payment delays', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'New legal events', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'Worsening financial ratios', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'Ownership / director changes', active:true, severity:'Low', detail:'New managing director registered, 2026-05-30.' },
+      { category:'VAT / tax issues', active:true, severity:'Medium', detail:'Late VAT filing flagged by the tax authority, June 2026.' }
+    ],
+    exposure:{ openInvoices:29000, creditLimit:75000, supplierDependency:15 },
+    recommendedActions:['Review manually within 30 days'],
+    alerts:[
+      { date:'2026-06-25', type:'Tax filing alert', severity:'Medium', desc:'Late VAT filing flagged by the tax authority.' },
+      { date:'2026-05-30', type:'Governance change', severity:'Low', desc:'New managing director registered with the commercial register.' }
+    ]
+  },
+  {
+    id:'baltic-steelworks-ew', name:'Baltic Steelworks sp. z o.o.', country:'PL', regId:'PL77120044', registeredDate:'2006-11-02',
+    band:'urgent', probability:76,
+    interpretation:'Urgent: an insolvency petition combined with severe payment delays and deteriorating ratios indicate high near-term default risk.',
+    lastUpdated:'2026-07-30', dataSource:'BureauInfo registry feed + commercial register + customer-provided exposure data',
+    drivers:[
+      { category:'Payment delays', active:true, severity:'High', detail:'Three open invoices totalling €140,000 now 60+ days past due.' },
+      { category:'New legal events', active:true, severity:'High', detail:'Insolvency petition filed against the company, 2026-07-10.' },
+      { category:'Worsening financial ratios', active:true, severity:'High', detail:'Interest coverage ratio fell below 1.0 in the latest filed accounts.' },
+      { category:'Ownership / director changes', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'VAT / tax issues', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' }
+    ],
+    exposure:{ openInvoices:410000, creditLimit:500000, supplierDependency:47 },
+    recommendedActions:['Reduce credit limit', 'Request additional security or collateral', 'Escalate for manual review'],
+    alerts:[
+      { date:'2026-07-10', type:'Negative legal event', severity:'High', desc:'Insolvency petition filed against the company.' },
+      { date:'2026-06-28', type:'Payment delay', severity:'High', desc:'Three open invoices totalling €140,000 now 60+ days past due.' },
+      { date:'2026-06-05', type:'Financial ratio alert', severity:'High', desc:'Interest coverage ratio fell below 1.0 in the latest filed accounts.' }
+    ]
+  },
+  {
+    id:'greenpack-ew', name:'GreenPack Logistik GmbH', country:'DE', regId:'DE23409981', registeredDate:'2017-04-18',
+    band:'stable', probability:11,
+    interpretation:'Stable: minor, isolated signals only; no combination of drivers currently meets the threshold for elevated risk.',
+    lastUpdated:'2026-07-18', dataSource:'BureauInfo registry feed + commercial register + customer-provided exposure data',
+    drivers:[
+      { category:'Payment delays', active:true, severity:'Low', detail:'One invoice paid 12 days late in June 2026; no recurring pattern.' },
+      { category:'New legal events', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'Worsening financial ratios', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'Ownership / director changes', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'VAT / tax issues', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' }
+    ],
+    exposure:{ openInvoices:22000, creditLimit:150000, supplierDependency:9 },
+    recommendedActions:['Continue standard monitoring'],
+    alerts:[
+      { date:'2026-06-15', type:'Monitoring summary', severity:'Low', desc:'No material change in risk profile in the last 90 days.' }
+    ]
+  },
+  {
+    id:'alpen-textil-ew', name:'Alpen Textil Handel GmbH', country:'DE', regId:'DE88871123', registeredDate:'2009-08-25',
+    band:'watch', probability:52,
+    interpretation:'Watch: combined payment delays and softening financial ratios place this account above the stable threshold; no legal or governance events recorded.',
+    lastUpdated:'2026-07-26', dataSource:'BureauInfo registry feed + commercial register + customer-provided exposure data',
+    drivers:[
+      { category:'Payment delays', active:true, severity:'Medium', detail:'Average days-to-pay increased from 28 to 46 over the last quarter.' },
+      { category:'New legal events', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'Worsening financial ratios', active:true, severity:'Medium', detail:'Gross margin declined from 24% to 17% year-on-year.' },
+      { category:'Ownership / director changes', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'VAT / tax issues', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' }
+    ],
+    exposure:{ openInvoices:67000, creditLimit:100000, supplierDependency:19 },
+    recommendedActions:['Review manually within 30 days', 'Increase monitoring frequency'],
+    alerts:[
+      { date:'2026-07-15', type:'Payment delay', severity:'Medium', desc:'Average days-to-pay increased from 28 to 46 over the last quarter.' },
+      { date:'2026-06-20', type:'Financial ratio alert', severity:'Medium', desc:'Gross margin declined from 24% to 17% year-on-year.' }
+    ]
+  },
+  {
+    id:'polfarma-ew', name:'Polfarma Supply sp. z o.o.', country:'PL', regId:'PL34567812', registeredDate:'2014-01-09',
+    band:'stable', probability:14,
+    interpretation:'Stable: payment behaviour, financial ratios and governance remain consistent with prior periods.',
+    lastUpdated:'2026-07-12', dataSource:'BureauInfo registry feed + commercial register + customer-provided exposure data',
+    drivers:[
+      { category:'Payment delays', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'New legal events', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'Worsening financial ratios', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'Ownership / director changes', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' },
+      { category:'VAT / tax issues', active:false, severity:'Low', detail:'No signal detected in the last 90 days.' }
+    ],
+    exposure:{ openInvoices:15000, creditLimit:80000, supplierDependency:6 },
+    recommendedActions:['Continue standard monitoring'],
+    alerts:[]
+  }
+];
+
+let currentEwCompany = null;
+let portfolioSortField = 'probability';
+let portfolioSortDir = 'desc';
+
+function bandInfo(band){
+  return {
+    stable: { label:'Stable', cls:'badge-low', color:'var(--low)', bg:'var(--low-bg)', border:'var(--low-border)' },
+    watch:  { label:'Watch',  cls:'badge-med', color:'var(--med)', bg:'var(--med-bg)', border:'var(--med-border)' },
+    urgent: { label:'Urgent', cls:'badge-high', color:'var(--high)', bg:'var(--high-bg)', border:'var(--high-border)' }
+  }[band];
+}
+
+function renderPortfolio(){
+  const list = EW_PORTFOLIO.slice();
+  list.sort((a, b) => {
+    const av = portfolioSortField === 'probability' ? a.probability : a.exposure.openInvoices;
+    const bv = portfolioSortField === 'probability' ? b.probability : b.exposure.openInvoices;
+    return portfolioSortDir === 'desc' ? bv - av : av - bv;
+  });
+  document.getElementById('ewPortfolioBody').innerHTML = list.map(c => {
+    const bi = bandInfo(c.band);
+    const topDriver = c.drivers.find(d => d.active);
+    return `
+      <tr>
+        <td>${c.name}</td>
+        <td>${c.country}</td>
+        <td><span class="badge ${bi.cls}">${bi.label} · ${c.probability}%</span></td>
+        <td>€${fmt(c.exposure.openInvoices)}</td>
+        <td>${topDriver ? topDriver.category : '—'}</td>
+        <td>${c.lastUpdated}</td>
+        <td><button class="link-btn" onclick="openEwReport('${c.id}')">View Report</button></td>
+      </tr>
+    `;
+  }).join('');
+  updatePortfolioSortIndicators();
+}
+function sortPortfolio(field){
+  if(portfolioSortField === field){
+    portfolioSortDir = portfolioSortDir === 'desc' ? 'asc' : 'desc';
+  } else {
+    portfolioSortField = field;
+    portfolioSortDir = 'desc';
+  }
+  renderPortfolio();
+}
+function updatePortfolioSortIndicators(){
+  document.querySelectorAll('#ewPortfolioTableWrap th.sortable-th').forEach(th => {
+    const field = th.dataset.sort;
+    const label = th.dataset.label;
+    th.textContent = label + (field === portfolioSortField ? (portfolioSortDir === 'desc' ? ' ▼' : ' ▲') : '');
+  });
+}
+
+function openEwReport(id){
+  const c = EW_PORTFOLIO.find(x => x.id === id);
+  if(!c) return;
+  currentEwCompany = c;
+  if(!c._audit){
+    const t1 = new Date(new Date().getTime() - 2*60000).toLocaleString();
+    c._audit = [
+      { time: t1, user: session.currentUser, action:'Report Viewed', desc:`Viewed Early Warning & Financial Exposure report for ${c.name}.` }
+    ];
+  }
+  document.getElementById('dashboardSection').classList.add('hidden');
+  document.getElementById('ewReportSection').classList.remove('hidden');
+  renderEwReport();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function backToPortfolio(){
+  document.getElementById('ewReportSection').classList.add('hidden');
+  document.getElementById('dashboardSection').classList.remove('hidden');
+}
+
+function renderEwReport(){
+  const c = currentEwCompany;
+  const bi = bandInfo(c.band);
+
+  document.getElementById('ew-name').textContent = c.name;
+  document.getElementById('ew-idline').textContent = 'Registered ' + c.registeredDate + '  ·  Registration ID: ' + c.regId + '  ·  ' + c.country;
+  document.getElementById('ew-prob').textContent = c.probability + '%';
+  document.getElementById('ew-band-label').textContent = bi.label + ' — 90-day deterioration risk';
+  document.getElementById('ew-interpretation').textContent = c.interpretation;
+
+  const ring = document.getElementById('ewRing');
+  ring.style.setProperty('--band-border', bi.border);
+  ring.style.setProperty('--band-bg', bi.bg);
+  ring.style.setProperty('--band-color', bi.color);
+
+  document.getElementById('ew-lastupdate').textContent = c.lastUpdated;
+  document.getElementById('ew-daysago').textContent = '(' + daysSince(c.lastUpdated) + ' days ago)';
+  document.getElementById('ew-source').textContent = c.dataSource;
+
+  document.getElementById('ew-drivers').innerHTML = c.drivers.map(d => `
+    <div class="alert-item">
+      <div class="a-date" style="min-width:110px;">${d.active ? severityBadge(d.severity) : '<span class="badge badge-neutral">Inactive</span>'}</div>
+      <div class="a-body">
+        <div class="a-title">${d.category}</div>
+        <div class="a-desc">${d.detail}</div>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('ew-exposure').innerHTML = `
+    <div class="snap-card"><div class="snap-val">€${fmt(c.exposure.openInvoices)}</div><div class="snap-lbl">Open Invoices</div></div>
+    <div class="snap-card"><div class="snap-val">€${fmt(c.exposure.creditLimit)}</div><div class="snap-lbl">Credit Limit</div></div>
+    <div class="snap-card"><div class="snap-val">${c.exposure.supplierDependency}%</div><div class="snap-lbl">Supplier Dependency</div></div>
+  `;
+
+  document.getElementById('ew-actions').textContent = c.recommendedActions.join('; ') + '.';
+
+  document.getElementById('ew-alerts').innerHTML = c.alerts.length ? c.alerts.map(a => `
+    <div class="alert-item">
+      <div class="a-date">${a.date}</div>
+      <div class="a-body">
+        <div class="a-title">${severityBadge(a.severity)} ${a.type}</div>
+        <div class="a-desc">${a.desc}</div>
+      </div>
+    </div>
+  `).join('') : '<p class="muted-sm">No alerts recorded.</p>';
+
+  renderEwAudit();
+}
+
+function renderEwAudit(){
+  const list = currentEwCompany._audit || [];
+  document.getElementById('ew-audit').innerHTML = list.map(a => `
+    <div class="audit-item">
+      <div class="au-time">${a.time}</div>
+      <div class="au-body">
+        <div class="au-user">${a.user} — ${a.action}</div>
+        <div class="au-desc">${a.desc}</div>
+      </div>
+    </div>
+  `).join('');
+}
+function ewAddAudit(action, desc){
+  if(!currentEwCompany) return;
+  currentEwCompany._audit.push({ time: new Date().toLocaleString(), user: session.currentUser, action, desc });
+  renderEwAudit();
+}
+function ewExportPdf(){
+  if(!currentEwCompany) return;
+  ewAddAudit('Export', 'PDF export requested (simulated — no real file generated in this prototype).');
+  showToast('PDF export simulated (no real file generated in prototype).', '');
+}
+function ewMarkReviewed(){
+  if(!currentEwCompany) return;
+  ewAddAudit('Reviewed', 'Marked as reviewed by analyst. No further action required at this time.');
+  showToast('Marked as reviewed. Logged to audit trail.', 'success');
+}
+function ewEscalate(){
+  if(!currentEwCompany) return;
+  ewAddAudit('Escalation', 'Escalated for manual credit review.');
+  showToast('Escalated for manual review. Logged to audit trail.', 'danger');
+}
+function ewAddNote(){
+  const type = document.getElementById('ew-note-type').value;
+  const comment = document.getElementById('ew-note-comment').value.trim();
+  if(!comment){
+    showToast('Please enter a comment before adding to the audit trail.', 'danger');
+    return;
+  }
+  ewAddAudit(type, comment);
+  document.getElementById('ew-note-comment').value = '';
+  showToast(type + ' added to audit trail.', 'success');
+}
+
 /* Simple accent normalizer so "Novak" also matches "Nováková" etc. */
 function normalize(s){
   return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
@@ -939,15 +1461,70 @@ const COUNTRY_META = {
 };
 
 function login(){
-  const country = document.getElementById('loginCountry').value;
+  const errEl = document.getElementById('loginError');
+  errEl.classList.add('hidden');
+
   const emailInput = document.getElementById('workEmail').value.trim();
-  if(emailInput) session.email = emailInput;
-  session.market = country;
+  const passwordInput = document.getElementById('password').value;
+
+  const account = findAccountForLogin(emailInput);
+  if(!account || account.password !== passwordInput){
+    errEl.textContent = 'Incorrect email address or password.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  session.loginKey = account.idKey;
+  session.firstName = account.firstName;
+  session.lastName = account.lastName;
+  session.email = account.email;
+  session.password = account.password;
+  session.market = account.country;
+
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('portalScreen').classList.remove('hidden');
-  document.getElementById('marketPill').textContent = 'Market: ' + country;
+  document.getElementById('marketPill').textContent = 'Market: ' + session.market;
   updateTopbarDisplay();
   applyMarketDefaults();
+}
+
+/* Look up a login account by email, applying any saved overrides
+   (from Account Details / Password Change) on top of the base
+   CREDENTIALS record. Also matches on an override's current email,
+   in case the user has since changed it. */
+function findAccountForLogin(enteredEmail){
+  const key = enteredEmail.toLowerCase();
+
+  const master = CREDENTIALS.find(c => c.email.toLowerCase() === key);
+  if(master){
+    const idKey = master.email.toLowerCase();
+    const ov = accountOverrides[idKey] || {};
+    return {
+      idKey,
+      email: ov.email || master.email,
+      password: ov.password || master.password,
+      firstName: ov.firstName || master.firstName,
+      lastName: ov.lastName || master.lastName,
+      country: master.country
+    };
+  }
+
+  for(const idKey in accountOverrides){
+    const ov = accountOverrides[idKey];
+    if(ov.email && ov.email.toLowerCase() === key){
+      const base = CREDENTIALS.find(c => c.email.toLowerCase() === idKey);
+      if(!base) continue;
+      return {
+        idKey,
+        email: ov.email,
+        password: ov.password || base.password,
+        firstName: ov.firstName || base.firstName,
+        lastName: ov.lastName || base.lastName,
+        country: base.country
+      };
+    }
+  }
+  return null;
 }
 
 function applyMarketDefaults(){
@@ -966,30 +1543,25 @@ function updateTopbarDisplay(){
 
 /* ============================================================
    ACCOUNT PERSISTENCE
-   Name/email/password edits are saved to localStorage so they
-   survive a page reload ("another login"), since this prototype
-   has no real backend/session of its own.
+   Per-account overrides (name/email/password edits made via
+   Account Details / Password Change) are saved to localStorage,
+   keyed by the account's original login email, so they survive
+   a page reload / re-login in the same browser. The base 100
+   CREDENTIALS records are never modified — overrides just layer
+   on top of them at login time.
    ============================================================ */
-function persistSession(){
+let accountOverrides = {};
+
+function loadOverrides(){
   try{
-    localStorage.setItem('bureauinfo_account', JSON.stringify({
-      firstName: session.firstName,
-      lastName: session.lastName,
-      email: session.email,
-      password: session.password
-    }));
-  }catch(e){ /* storage unavailable (e.g. private browsing) — changes stay session-only */ }
+    const raw = localStorage.getItem('bureauinfo_overrides');
+    accountOverrides = raw ? JSON.parse(raw) : {};
+  }catch(e){ accountOverrides = {}; }
 }
-function loadPersistedSession(){
+function persistOverrides(){
   try{
-    const raw = localStorage.getItem('bureauinfo_account');
-    if(!raw) return;
-    const saved = JSON.parse(raw);
-    if(saved.firstName) session.firstName = saved.firstName;
-    if(saved.lastName) session.lastName = saved.lastName;
-    if(saved.email) session.email = saved.email;
-    if(saved.password) session.password = saved.password;
-  }catch(e){ /* ignore corrupt/blocked storage */ }
+    localStorage.setItem('bureauinfo_overrides', JSON.stringify(accountOverrides));
+  }catch(e){ /* storage unavailable (e.g. private browsing) — changes stay session-only */ }
 }
 
 /* ============================================================
@@ -1048,7 +1620,15 @@ function saveAccountDetails(){
   session.firstName = first;
   session.lastName = last;
   session.email = email;
-  persistSession();
+
+  const ov = accountOverrides[session.loginKey] || {};
+  ov.firstName = first;
+  ov.lastName = last;
+  ov.email = email;
+  if(!ov.password) ov.password = session.password;
+  accountOverrides[session.loginKey] = ov;
+  persistOverrides();
+
   updateTopbarDisplay();
   closeProfileModal();
 
@@ -1110,7 +1690,15 @@ function submitPasswordChange(){
   }
 
   session.password = next;
-  persistSession();
+
+  const ov = accountOverrides[session.loginKey] || {};
+  ov.password = next;
+  ov.firstName = ov.firstName || session.firstName;
+  ov.lastName = ov.lastName || session.lastName;
+  ov.email = ov.email || session.email;
+  accountOverrides[session.loginKey] = ov;
+  persistOverrides();
+
   closePasswordModal();
   showToast('Password successfully changed.', 'success');
 }
@@ -1607,8 +2195,8 @@ function showToast(message, kind){
 /* ============================================================
    INIT — restore any persisted account edits before login
    ============================================================ */
-loadPersistedSession();
-document.getElementById('workEmail').value = session.email;
+loadOverrides();
+renderPortfolio();
 </script>
 </body>
 </html>
