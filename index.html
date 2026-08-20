@@ -21,8 +21,10 @@
      Alerts, Audit & Disputes, API Response.
   4) Actions and the Audit & Disputes note form append client-side entries to the audit trail
      (mock only — nothing persists after a page refresh, no data leaves the browser).
-  4b) Below the search panel, "Early Warning & Financial Exposure Monitoring" shows a portfolio
-      of 8 monitored companies (sortable by Deterioration and Exposure). "View Report" opens a
+  4b) A persistent left side navigation ("Search Bureau Records" / "Early Warning Monitoring")
+      lets you jump between modules from anywhere. Early Warning & Financial Exposure Monitoring
+      shows a portfolio of companies filtered to the market you're logged into (e.g. Market: CZ
+      shows only CZ companies), sortable by Deterioration and Exposure. "View Report" opens a
       per-company Early Warning & Financial Exposure Report: 90-day deterioration indicator
       (Stable / Watch / Urgent), the five early-warning driver categories, estimated exposure,
       recommended actions, alerts, and an audit/review trail. No autonomous credit decisions are
@@ -159,7 +161,22 @@
   #topbar .client-name{font-weight:600;}
   #topbar .client-sub{color:rgba(255,255,255,.78);font-size:.78rem;}
 
-  main{max-width:1180px;margin:0 auto;padding:22px 22px 60px;}
+  /* ---------- App shell / side navigation ---------- */
+  .app-shell{display:flex;align-items:flex-start;max-width:1180px;margin:0 auto;}
+  .side-nav{width:220px;flex:none;padding:22px 8px 40px 22px;}
+  .side-nav-inner{position:sticky;top:66px;display:flex;flex-direction:column;gap:2px;}
+  .side-nav-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:700;padding:6px 12px 6px;}
+  .side-nav-item{display:block;width:100%;text-align:left;background:none;border:none;padding:10px 12px;border-radius:8px;font-weight:650;font-size:.9rem;color:var(--text-muted);cursor:pointer;}
+  .side-nav-item:hover{background:#f3f6fb;color:var(--brand);}
+  .side-nav-item.active{background:var(--brand-light);color:var(--brand);}
+  @media (max-width:860px){
+    .app-shell{flex-direction:column;}
+    .side-nav{width:100%;padding:14px 22px 0;}
+    .side-nav-inner{position:static;flex-direction:row;overflow-x:auto;gap:6px;padding-bottom:2px;}
+    .side-nav-item{white-space:nowrap;}
+  }
+  main{flex:1;min-width:0;padding:22px 22px 60px 14px;}
+  @media (max-width:860px){ main{padding:16px 22px 60px;} }
 
   /* ---------- Cards / panels ---------- */
   .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px 22px;}
@@ -374,7 +391,15 @@
     </div>
   </header>
 
-  <main>
+  <div class="app-shell">
+    <nav class="side-nav">
+      <div class="side-nav-inner">
+        <div class="side-nav-label">Modules</div>
+        <button class="side-nav-item active" id="navSearch" onclick="navigateTo('search')">Search Bureau Records</button>
+        <button class="side-nav-item" id="navEw" onclick="navigateTo('ew')">Early Warning Monitoring</button>
+      </div>
+    </nav>
+    <main>
 
     <!-- ---------------------------------------------------------- -->
     <!-- 2) DASHBOARD & SEARCH                                       -->
@@ -383,7 +408,7 @@
       <div class="grid-2">
 
         <!-- Search panel -->
-        <div class="card">
+        <div class="card" id="searchPanelCard">
           <h2>Search Bureau Records</h2>
           <p class="muted-sm" style="margin-bottom:14px;">Search a consumer (person) or a business (company) file. Try “Anna Novak”, “John Doe”, “Petr Svoboda”, “ABC s.r.o.” or “XYZ Holdings”.</p>
 
@@ -489,9 +514,10 @@
       </div>
 
       <!-- Early Warning & Financial Exposure Monitoring -->
-      <div class="card" style="margin-top:16px;">
+      <div class="card" id="ewPortfolioCard" style="margin-top:16px;">
         <h2>Early Warning &amp; Financial Exposure Monitoring</h2>
-        <p class="muted-sm" style="margin-bottom:14px;">Portfolio-level monitoring for existing customers: a 90-day deterioration indicator, early-warning drivers, estimated exposure, and recommended actions — for human review only, no autonomous credit decisions.</p>
+        <p class="muted-sm" style="margin-bottom:6px;">Portfolio-level monitoring for existing customers: a 90-day deterioration indicator, early-warning drivers, estimated exposure, and recommended actions — for human review only, no autonomous credit decisions.</p>
+        <p class="muted-sm" id="ewMarketNote" style="margin-bottom:14px;"></p>
         <div class="table-wrap" id="ewPortfolioTableWrap">
           <table>
             <thead><tr>
@@ -699,7 +725,8 @@
       </div>
     </section>
 
-  </main>
+    </main>
+  </div>
 </div>
 
 <!-- Toast -->
@@ -1257,13 +1284,21 @@ function bandInfo(band){
 }
 
 function renderPortfolio(){
-  const list = EW_PORTFOLIO.slice();
+  const list = EW_PORTFOLIO.filter(c => c.country === session.market);
   list.sort((a, b) => {
     const av = portfolioSortField === 'probability' ? a.probability : a.exposure.openInvoices;
     const bv = portfolioSortField === 'probability' ? b.probability : b.exposure.openInvoices;
     return portfolioSortDir === 'desc' ? bv - av : av - bv;
   });
-  document.getElementById('ewPortfolioBody').innerHTML = list.map(c => {
+
+  const noteEl = document.getElementById('ewMarketNote');
+  if(noteEl){
+    noteEl.textContent = list.length
+      ? `Showing ${list.length} compan${list.length === 1 ? 'y' : 'ies'} monitored in the ${session.market} market.`
+      : `No companies currently monitored in the ${session.market} market.`;
+  }
+
+  document.getElementById('ewPortfolioBody').innerHTML = list.length ? list.map(c => {
     const bi = bandInfo(c.band);
     const topDriver = c.drivers.find(d => d.active);
     return `
@@ -1277,7 +1312,7 @@ function renderPortfolio(){
         <td><button class="link-btn" onclick="openEwReport('${c.id}')">View Report</button></td>
       </tr>
     `;
-  }).join('');
+  }).join('') : `<tr><td colspan="7" class="muted-sm" style="padding:16px 10px;">No monitored companies in the ${session.market} market yet.</td></tr>`;
   updatePortfolioSortIndicators();
 }
 function sortPortfolio(field){
@@ -1309,12 +1344,31 @@ function openEwReport(id){
   }
   document.getElementById('dashboardSection').classList.add('hidden');
   document.getElementById('ewReportSection').classList.remove('hidden');
+  setActiveNav('ew');
   renderEwReport();
   window.scrollTo({top:0, behavior:'smooth'});
 }
 function backToPortfolio(){
   document.getElementById('ewReportSection').classList.add('hidden');
   document.getElementById('dashboardSection').classList.remove('hidden');
+  setActiveNav('ew');
+}
+
+/* ============================================================
+   SIDE NAVIGATION
+   ============================================================ */
+function navigateTo(module){
+  document.getElementById('reportSection').classList.add('hidden');
+  document.getElementById('ewReportSection').classList.add('hidden');
+  document.getElementById('dashboardSection').classList.remove('hidden');
+  setActiveNav(module);
+  const targetId = module === 'ew' ? 'ewPortfolioCard' : 'searchPanelCard';
+  const el = document.getElementById(targetId);
+  if(el) el.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+function setActiveNav(module){
+  document.getElementById('navSearch').classList.toggle('active', module === 'search');
+  document.getElementById('navEw').classList.toggle('active', module === 'ew');
 }
 
 function renderEwReport(){
@@ -1486,6 +1540,8 @@ function login(){
   document.getElementById('marketPill').textContent = 'Market: ' + session.market;
   updateTopbarDisplay();
   applyMarketDefaults();
+  setActiveNav('search');
+  renderPortfolio();
 }
 
 /* Look up a login account by email, applying any saved overrides
@@ -1856,6 +1912,7 @@ function openReport(profile){
 
   document.getElementById('dashboardSection').classList.add('hidden');
   document.getElementById('reportSection').classList.remove('hidden');
+  setActiveNav('search');
 
   renderReport();
   switchTab('summary');
@@ -1865,6 +1922,7 @@ function openReport(profile){
 function backToDashboard(){
   document.getElementById('reportSection').classList.add('hidden');
   document.getElementById('dashboardSection').classList.remove('hidden');
+  setActiveNav('search');
 }
 
 function buildSeedAudit(profile){
