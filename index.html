@@ -10,26 +10,28 @@
      100 test accounts (25 each for CZ/SK/PL/DE — see the accompanying spreadsheet). A wrong
      email or password shows "Incorrect email address or password." and login is blocked.
      Prefilled demo account: jana.novakova@lenderbank.cz / Lender#2026.
-  2) Portal dashboard -> search a Person or a Company. Try: "Anna Novak" (CZ, low risk),
+  2) After login, the Early Warning & Financial Exposure Monitoring portfolio is shown first
+     (filtered to the market you're logged into). Use the left side navigation to switch to
+     Search Bureau Records — only one module is shown on screen at a time.
+  3) Search Bureau Records -> search a Person or a Company. Try: "Anna Novak" (CZ, low risk),
      "John Doe" (CZ, high risk), "Petr Svoboda" (thin file), "ABC s.r.o." (stable SME company),
      "XYZ Holdings" (distressed company). "XYZ" alone shows a not-found error. Any other name
      returns a generic example profile.
-  3) Credit report -> top summary (score, risk band, freshness, monitoring), primary decision
+  4) Credit report -> top summary (score, risk band, freshness, monitoring), primary decision
      actions (Approve / Decline / Request More Info / Export PDF / View API Response /
      Add to Monitoring — toggles to Remove from Monitoring), and tabs: Summary,
      Open & Closed Credit (sortable by Product, Lender, Status, Last Payment), Enquiries,
      Alerts, Audit & Disputes, API Response.
-  4) Actions and the Audit & Disputes note form append client-side entries to the audit trail
+  5) Actions and the Audit & Disputes note form append client-side entries to the audit trail
      (mock only — nothing persists after a page refresh, no data leaves the browser).
-  4b) A persistent left side navigation ("Search Bureau Records" / "Early Warning Monitoring")
-      lets you jump between modules from anywhere. Early Warning & Financial Exposure Monitoring
-      shows a portfolio of companies filtered to the market you're logged into (e.g. Market: CZ
-      shows only CZ companies), sortable by Deterioration and Exposure. "View Report" opens a
-      per-company Early Warning & Financial Exposure Report: 90-day deterioration indicator
-      (Stable / Watch / Urgent), the five early-warning driver categories, estimated exposure,
-      recommended actions, alerts, and an audit/review trail. No autonomous credit decisions are
-      made here — only "Mark as Reviewed" / "Escalate for Manual Review" logging actions.
-  5) Click the avatar/name in the top bar to open the account menu: "Account Details" edits
+  6) Early Warning & Financial Exposure Monitoring: a portfolio of monitored companies
+     (sortable by Deterioration and Exposure), filtered to the logged-in user's market.
+     "View Report" opens a per-company Early Warning & Financial Exposure Report: 90-day
+     deterioration indicator (Stable / Watch / Urgent), the five early-warning driver
+     categories, estimated exposure, recommended actions, alerts, and an audit/review trail.
+     No autonomous credit decisions are made here — only "Mark as Reviewed" /
+     "Escalate for Manual Review" logging actions.
+  7) Click the avatar/name in the top bar to open the account menu: "Account Details" edits
      first name, last name, and work email; "Password Change" requires the current password
      (demo password: Lender#2026) and validates the new password against standard rules.
      Both persist to localStorage so edits survive a page reload / re-login in the same browser.
@@ -395,8 +397,8 @@
     <nav class="side-nav">
       <div class="side-nav-inner">
         <div class="side-nav-label">Modules</div>
-        <button class="side-nav-item active" id="navSearch" onclick="navigateTo('search')">Search Bureau Records</button>
-        <button class="side-nav-item" id="navEw" onclick="navigateTo('ew')">Early Warning Monitoring</button>
+        <button class="side-nav-item active" id="navEw" onclick="navigateTo('ew')">Early Warning Monitoring</button>
+        <button class="side-nav-item" id="navSearch" onclick="navigateTo('search')">Search Bureau Records</button>
       </div>
     </nav>
     <main>
@@ -405,6 +407,29 @@
     <!-- 2) DASHBOARD & SEARCH                                       -->
     <!-- ---------------------------------------------------------- -->
     <section id="dashboardSection">
+
+      <!-- Early Warning & Financial Exposure Monitoring (default view after login) -->
+      <div id="ewView" class="hidden">
+        <div class="card" id="ewPortfolioCard">
+          <h2>Early Warning &amp; Financial Exposure Monitoring</h2>
+          <p class="muted-sm" style="margin-bottom:6px;">Portfolio-level monitoring for existing customers: a 90-day deterioration indicator, early-warning drivers, estimated exposure, and recommended actions — for human review only, no autonomous credit decisions.</p>
+          <p class="muted-sm" id="ewMarketNote" style="margin-bottom:14px;"></p>
+          <div class="table-wrap" id="ewPortfolioTableWrap">
+            <table>
+              <thead><tr>
+                <th>Company</th><th>Country</th>
+                <th class="sortable-th" data-sort="probability" data-label="Deterioration" onclick="sortPortfolio('probability')">Deterioration</th>
+                <th class="sortable-th" data-sort="exposure" data-label="Exposure" onclick="sortPortfolio('exposure')">Exposure</th>
+                <th>Top Driver</th><th>Updated</th><th></th>
+              </tr></thead>
+              <tbody id="ewPortfolioBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Search Bureau Records -->
+      <div id="searchView" class="hidden">
       <div class="grid-2">
 
         <!-- Search panel -->
@@ -512,24 +537,8 @@
         </div>
 
       </div>
-
-      <!-- Early Warning & Financial Exposure Monitoring -->
-      <div class="card" id="ewPortfolioCard" style="margin-top:16px;">
-        <h2>Early Warning &amp; Financial Exposure Monitoring</h2>
-        <p class="muted-sm" style="margin-bottom:6px;">Portfolio-level monitoring for existing customers: a 90-day deterioration indicator, early-warning drivers, estimated exposure, and recommended actions — for human review only, no autonomous credit decisions.</p>
-        <p class="muted-sm" id="ewMarketNote" style="margin-bottom:14px;"></p>
-        <div class="table-wrap" id="ewPortfolioTableWrap">
-          <table>
-            <thead><tr>
-              <th>Company</th><th>Country</th>
-              <th class="sortable-th" data-sort="probability" data-label="Deterioration" onclick="sortPortfolio('probability')">Deterioration</th>
-              <th class="sortable-th" data-sort="exposure" data-label="Exposure" onclick="sortPortfolio('exposure')">Exposure</th>
-              <th>Top Driver</th><th>Updated</th><th></th>
-            </tr></thead>
-            <tbody id="ewPortfolioBody"></tbody>
-          </table>
-        </div>
       </div>
+
     </section>
 
     <!-- ---------------------------------------------------------- -->
@@ -1351,6 +1360,7 @@ function openEwReport(id){
 function backToPortfolio(){
   document.getElementById('ewReportSection').classList.add('hidden');
   document.getElementById('dashboardSection').classList.remove('hidden');
+  showDashboardView('ew');
   setActiveNav('ew');
 }
 
@@ -1361,10 +1371,13 @@ function navigateTo(module){
   document.getElementById('reportSection').classList.add('hidden');
   document.getElementById('ewReportSection').classList.add('hidden');
   document.getElementById('dashboardSection').classList.remove('hidden');
+  showDashboardView(module);
   setActiveNav(module);
-  const targetId = module === 'ew' ? 'ewPortfolioCard' : 'searchPanelCard';
-  const el = document.getElementById(targetId);
-  if(el) el.scrollIntoView({ behavior:'smooth', block:'start' });
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function showDashboardView(module){
+  document.getElementById('ewView').classList.toggle('hidden', module !== 'ew');
+  document.getElementById('searchView').classList.toggle('hidden', module !== 'search');
 }
 function setActiveNav(module){
   document.getElementById('navSearch').classList.toggle('active', module === 'search');
@@ -1540,7 +1553,8 @@ function login(){
   document.getElementById('marketPill').textContent = 'Market: ' + session.market;
   updateTopbarDisplay();
   applyMarketDefaults();
-  setActiveNav('search');
+  showDashboardView('ew');
+  setActiveNav('ew');
   renderPortfolio();
 }
 
@@ -1922,6 +1936,7 @@ function openReport(profile){
 function backToDashboard(){
   document.getElementById('reportSection').classList.add('hidden');
   document.getElementById('dashboardSection').classList.remove('hidden');
+  showDashboardView('search');
   setActiveNav('search');
 }
 
